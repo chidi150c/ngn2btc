@@ -1,0 +1,1674 @@
+
+type tickerv3ServiceChans struct {
+	startMakeProfitTickerChan  chan chan *model.Ticker
+	startTickerManagerChan     chan chan *model.Ticker
+	startCheckPriceTickerChan  chan chan *model.Ticker
+}
+
+func newTickerv3ServiceChans() *tickerv3ServiceChans {
+	return &tickerv3ServiceChans{
+		startTickerManagerChan: make(chan chan *model.Ticker),
+	}
+}
+func (w *Worker) getTickerv3(gtkr *tickerv3ServiceChans) {
+	tickerChan := make(chan *model.Ticker)
+	for {
+		select {
+		case tickerChan = <-gtkr.startCheckPriceTickerChan:
+			break
+		case tickerChan = <-gtkr.startTickerManagerChan:
+			break
+		case tickerChan = <-gtkr.startMakeProfitTickerChan:
+			break
+		}
+		go func(tickerChan chan *model.Ticker) {
+			var err error
+			var ticker *model.Ticker
+			for {
+				ticker, err = w.API.GetTicker(w.Symbol.ID)
+				if err != nil {
+					log.Printf("%s FATAL8: %v\n", w.Symbol.ID, err)
+					time.Sleep(time.Second * 10)
+					continue
+				}
+				break
+			}
+			//log.Println()
+			//log.Printf("GetTicker: go func1: For %s: Got Ticker %s sucessfully now sending to channel \n", w.Symbol.ID, ticker.Last)
+			tickerChan <- ticker
+			return
+		}(tickerChan)
+		time.Sleep(time.Second * 2)
+	}
+}
+
+type checkPriceServiceChans struct {
+	startEmaPriceChan         chan chan emaData
+	startCheckPriceTickerChan chan chan *model.Ticker
+}
+
+func newcheckPriceServiceChans() *checkPriceServiceChans {
+	return &checkPriceServiceChans{
+		startCheckPriceTickerChan: make(chan chan *model.Ticker),
+	}
+}
+func (w *Worker) checkPrice(cpsc *checkPriceServiceChans) chan<- chan buyOrSellStatusData {
+	md := make(chan buyOrSellStatusData)
+	cPD := make(chan chan buyOrSellStatusData)
+	cPDOpen := cPD
+	emaChan := make(chan emaData)
+	tickSize, _ := strconv.ParseFloat(w.Symbol.TickSize, 64)
+	highestSellEMA5513Gap := tickSize * 4
+	highestBuyEMA5513Gap := tickSize * 4
+	var buyEMA5513Diff float64
+	var sellEMA5513Diff float64
+	highestBuyEMA5513GapChan := make(chan float64, 1)
+	highestSellEMA5513GapChan := make(chan float64, 1)
+	go func() {
+		for {
+			select {
+			case md = <-cPD:
+				////log.Printf("checkPrice: for %s: Got request for Price Status %v from buyOrSellPrice\n", w.Symbol.ID, md)
+				cPD = nil
+			case highestSellEMA5513Gap = <-highestSellEMA5513GapChan:
+				//log.Printf("checkPrice: for %s: Has just updated the highestSellEMA5513Gap to be %.8f\n", w.Symbol.ID, highestSellEMA5513Gap)
+				cPD = cPDOpen
+				continue
+			case highestBuyEMA5513Gap = <-highestBuyEMA5513GapChan:
+				//log.Printf("checkPrice: for %s: Has just updated the highestBuyEMA5513Gap to be %.8f\n", w.Symbol.ID, highestBuyEMA5513Gap)
+				cPD = cPDOpen
+				continue
+			}
+			for {
+				cpsc.startEmaPriceChan <- emaChan
+				e := <-emaChan
+				ema55Price := e.ema55
+				if w.Symbol.BaseCurrency != "BCH" {
+					ema55Price = e.ema34
+				}
+				ema13Price := e.ema13
+				lastPrice := getLastPrice(cpsc.startCheckPriceTickerChan)
+				switch {
+				case ema55Price > ema13Price && lastPrice <= ema13Price: //Price is going down
+					highestSellEMA5513Gap = tickSize * 4
+					buyEMA5513Diff = math.Abs(ema55Price - ema13Price)
+					if (buyEMA5513Diff < highestBuyEMA5513Gap) || (buyEMA5513Diff <= 0) {
+						//log.Printf("checkPrice: For %s: Dont buy on a smaller EmaDIFF %.8f | Target: %.8f |\n", w.Symbol.ID, buyEMA5513Diff, highestBuyEMA5513Gap)
+						continue
+					}
+					//log.Printf("checkPrice: For %s: Price is going down so go on trying to buy\n", w.Symbol.ID)
+					diffUpdateChan := make(chan string, 1)
+					md <- buyOrSellStatusData{"buy", lastPrice, diffUpdateChan}
+					go func(buyEMA5513Diff, highestBuyEMA5513Gap float64, diffUpdateChan chan string) {
+						for {
+							select {
+							case <-time.After(time.Minute * 60):
+								highestBuyEMA5513GapChan <- buyEMA5513Diff
+								////log.Printf("checkPrice: For %s: Updating previous highestBuyEMA5513Gap %.8f with buyEMA5513Diff %.8f after wait timeout\n", w.Symbol.ID, highestBuyEMA5513Gap, buyEMA5513Diff)
+								return
+							case msg := <-diffUpdateChan:
+								if msg == "yesUpdateEmaDiff" {
+									highestBuyEMA5513GapChan <- buyEMA5513Diff
+									////log.Printf("checkPrice: For %s: Updating previous highestBuyEMA5513Gap %.8f with buyEMA5513Diff %.8f after getting %s from makeProfit\n", w.Symbol.ID, highestBuyEMA5513Gap, buyEMA5513Diff, msg)
+								} else if msg == "noMayRepeat" {
+									highestBuyEMA5513GapChan <- highestBuyEMA5513Gap
+									////log.Printf("checkPrice: For %s: Updating previous highestBuyEMA5513Gap %.8f with prevoius highestBuyEMA5513Gap %.8f after getting %s from makeProfit\n", w.Symbol.ID, highestBuyEMA5513Gap, highestBuyEMA5513Gap, msg)
+								}else{
+									highestBuyEMA5513GapChan <- buyEMA5513Diff
+									////log.Printf("checkPrice: For %s: Updating previous highestBuyEMA5513Gap %.8f with buyEMA5513Diff %.8f after wait timeout\n", w.Symbol.ID, highestBuyEMA5513Gap, buyEMA5513Diff)
+								}
+								return
+							}
+						}
+					}(buyEMA5513Diff, highestBuyEMA5513Gap, diffUpdateChan)
+				case ema55Price < ema13Price && lastPrice >= ema13Price: //Price is going up
+					highestBuyEMA5513Gap = tickSize * 4
+					sellEMA5513Diff = math.Abs(ema13Price - ema55Price)
+					if (sellEMA5513Diff < highestSellEMA5513Gap) || (sellEMA5513Diff <= 0) {
+						//log.Printf("checkPrice: For %s: Dont sell on a smaller EmaDIFF %.8f | Target: %.8f |\n", w.Symbol.ID, sellEMA5513Diff, highestSellEMA5513Gap)
+						continue
+					}
+					//log.Printf("checkPrice: For %s: Price is going up so go on trying to sell\n", w.Symbol.ID)
+					diffUpdateChan := make(chan string, 1)
+					md <- buyOrSellStatusData{"sell", lastPrice, diffUpdateChan}
+					go func(sellEMA5513Diff, highestSellEMA5513Gap float64, diffUpdateChan chan string) {
+						for {
+							select {
+							case <-time.After(time.Minute * 60):
+								highestSellEMA5513GapChan <- sellEMA5513Diff
+								////log.Printf("checkPrice: For %s: Updating previous highestSellEMA5513Gap %.8f with sellEMA5513Diff %.8f after wait timeout\n", w.Symbol.ID, highestSellEMA5513Gap, sellEMA5513Diff)
+								return
+							case msg := <-diffUpdateChan:
+								if msg == "yesUpdateEmaDiff" {
+									highestSellEMA5513GapChan <- sellEMA5513Diff
+									////log.Printf("checkPrice: For %s: Updating privous highestSellEMA5513Gap %.8f with sellEMA5513Diff %.8f after getting %s from makeProfit\n", w.Symbol.ID, highestSellEMA5513Gap, sellEMA5513Diff, msg)
+								} else if msg == "noMayRepeat" {
+									highestSellEMA5513GapChan <- highestSellEMA5513Gap
+									////log.Printf("checkPrice: For %s: Updating previous highestSellEMA5513Gap %.8f with prevoius highestSellEMA5513Gap %.8f after getting %s from makeProfit\n", w.Symbol.ID, highestSellEMA5513Gap, highestSellEMA5513Gap, msg)
+								}else{
+									highestSellEMA5513GapChan <- sellEMA5513Diff
+									////log.Printf("checkPrice: For %s: Updating previous highestSellEMA5513Gap %.8f with sellEMA5513Diff %.8f after wait timeout\n", w.Symbol.ID, highestSellEMA5513Gap, sellEMA5513Diff)
+								}
+								return
+							}
+						}
+					}(sellEMA5513Diff, highestSellEMA5513Gap, diffUpdateChan)
+				case ema55Price == ema13Price:
+					////log.Printf("checkPrice: For %s: Price direction is not determined as ema55Price == ema13Price \n", w.Symbol.ID)
+					time.Sleep(time.Minute * 5)
+					continue
+				default:
+					////log.Printf("checkPrice: For %s: Price direction is not determined as lastPrice %.8f and ema13Price %.8f did not match well\n", w.Symbol.ID, lastPrice, ema13Price)
+					time.Sleep(time.Second * 30)
+					continue
+				}
+				time.Sleep(time.Second * 2)
+				break
+			}
+		}
+	}()
+	return cPD
+}
+
+type buyOrSellStatusData struct {
+	status     string
+	lastPrice  float64
+	updateChan chan string
+}
+
+func (w *Worker) buyOrSellPrice(priceStatus chan<- chan buyOrSellStatusData) (<-chan buyOrSellStatusData, <-chan buyOrSellStatusData, <-chan buyOrSellStatusData, <-chan buyOrSellStatusData) {
+	co1Buy := make(chan buyOrSellStatusData)
+	co2Buy := make(chan buyOrSellStatusData)
+	co1Sell := make(chan buyOrSellStatusData)
+	co2Sell := make(chan buyOrSellStatusData)
+	priceBuySell := make(chan buyOrSellStatusData)
+	go func(priceStatus chan<- chan buyOrSellStatusData) {
+		for {
+			priceStatus <- priceBuySell
+			select {
+			case p := <-priceBuySell:
+				//log.Printf("buyOrSellPrice: for %s: from innerPriceFunc: Got \"%s\" from checkPrice via priceBuySell channel now sending to two accountManager controllers", w.Symbol.ID, p.status)
+				if p.status == "sell" {
+					go func(p buyOrSellStatusData) {
+						lastjust := time.After(time.Second * 1)
+						for {
+							select {
+							case <-lastjust:
+								return
+							case co2Sell <- p:
+								//log.Printf("buyOrSellPrice: for %s: from innerPriceFunc: sending the \"%s\" from checkPrice to accountManager sell controller", w.Symbol.ID, p.status)
+								return
+							}
+						}
+					}(p)
+					go func(p buyOrSellStatusData) {
+						lastjust := time.After(time.Second * 1)
+						for {
+							select {
+							case <-lastjust:
+								return
+							case co1Sell <- p:
+								//log.Printf("buyOrSellPrice: for %s: from innerPriceFunc: sending the \"%s\" from checkPrice to accountManager buy controller", w.Symbol.ID, p.status)
+								return
+							}
+						}
+					}(p)
+				} else {
+					go func(p buyOrSellStatusData) {
+						lastjust := time.After(time.Second * 1)
+						for {
+							select {
+							case <-lastjust:
+								return
+							case co1Buy <- p:
+								//log.Printf("buyOrSellPrice: for %s: from innerPriceFunc: sending the \"%s\" from checkPrice to accountManager buy controller", w.Symbol.ID, p.status)
+								return
+							}
+						}
+					}(p)
+					go func(p buyOrSellStatusData) {
+						lastjust := time.After(time.Second * 1)
+						for {
+							select {
+							case <-lastjust:
+								return
+							case co2Buy <- p:
+								//log.Printf("buyOrSellPrice: for %s: from innerPriceFunc: sending the \"%s\" from checkPrice to accountManager sell controller", w.Symbol.ID, p.status)
+								return
+							}
+						}
+					}(p)
+				}
+			}
+			//time.Sleep(time.Minute * 1)
+		}
+	}(priceStatus)
+	return co1Buy, co1Sell, co2Buy, co2Sell
+}
+
+type aManagerServiceChans struct {
+	makeProfitBuyOrSellController chan makeProfitData
+	realBuyOrSellSChan            chan makeProfitData
+	startTickerManagerChan        chan chan *model.Ticker
+	checkPriceServiceChns         *checkPriceServiceChans
+}
+
+func newAManagerServiceChans() *aManagerServiceChans {
+	return &aManagerServiceChans{}
+}
+func (w *Worker) accountManager(amsc *aManagerServiceChans) {
+	time.Sleep(time.Second * 10)
+	lastPrice := getLastPrice(amsc.startTickerManagerChan)
+	tickSize, _ := strconv.ParseFloat(w.Symbol.TickSize, 64)
+	initData := makeProfitData{
+		tYPE:                "A",
+		boughtOrSoldPrice:   lastPrice,
+		previousProfitTarget: lastPrice,
+		influencedBy:           "metTarget",
+		soldOrBoughtOrderID: "",
+		lowestPrice:         math.MaxFloat64,
+	}
+	initData.sender = "ManagerInitBuy"
+	initData.operation = "buy"
+	amsc.realBuyOrSellSChan <- initData
+	//log.Println()
+	////log.Printf("accountManager: For %s: Sent initData to realBuyChan | initData: %v | \n", w.Symbol.ID, initData)
+	initData.sender = "ManagerInitSell"
+	initData.operation = "sell"
+	time.Sleep(time.Second * 3)
+	lastPrice = getLastPrice(amsc.startTickerManagerChan)
+	initData.boughtOrSoldPrice = lastPrice
+	initData.previousProfitTarget  = lastPrice
+	amsc.realBuyOrSellSChan <- initData
+	//log.Println()
+	////log.Printf("accountManager: For %s: Sent initData to realSellChan | initData: %v | \n", w.Symbol.ID, initData)
+	var bd makeProfitData
+	priceStatus := w.checkPrice(amsc.checkPriceServiceChns)
+	PrcCo1Buy, PrcCo1Sell, PrcCo2Buy, PrcCo2Sell := w.buyOrSellPrice(priceStatus)
+	var stopReason string
+	var emaStatusPriceBuy, emaStatusPriceSell <-chan buyOrSellStatusData
+	for {
+		select {
+		case bd = <-amsc.makeProfitBuyOrSellController:
+			//log.Printf("accountManager: For %s: Got bd via makeProfitBuyOrSellController as bd = %v \n", w.Symbol.ID, bd)
+		}
+		if bd.tYPE == "B" {
+			continue
+		}
+		if bd.sender != "ManagerInitSell" && bd.sender != "ManagerInitBuy" {
+			continue
+		}
+		if bd.operation == "buy" {
+			emaStatusPriceBuy = PrcCo1Buy
+			emaStatusPriceSell = PrcCo1Sell
+		} else if bd.operation == "sell" {
+			emaStatusPriceBuy = PrcCo2Buy
+			emaStatusPriceSell = PrcCo2Sell
+		} else {
+			panic("no bd.operation value line 599")
+		}
+		go func(bd makeProfitData, emaStatusPriceBuy, emaStatusPriceSell <-chan buyOrSellStatusData) {
+			log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f Started with bd = %v\n", w.Symbol.ID, bd.operation, bd.count, bd)
+			defer log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f Ended\n", w.Symbol.ID, bd.operation, bd.count)
+			var buyOrSell buyOrSellStatusData
+			killOperator := false
+			var initData makeProfitData
+			if bd.operation != "buy" && bd.operation != "sell" {
+				//log.Printf("accountManager: for %s: with bd = %v\n", w.Symbol.ID, bd)
+				panic("no bd.operation value line 394")
+			}
+			for {
+				initData = makeProfitData{
+					sender:     bd.sender,
+					tYPE:       "A",
+					operation:  bd.operation,
+					stopMeChan: bd.stopMeChan,
+				}
+				killOperator = false
+				select {
+				case buyOrSell = <-emaStatusPriceSell:
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got \"%s\" from emaStatusPriceSell\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					if bd.operation == "buy" {
+						//log.Printf("accountManager: for %s: for %s controller: going to kill a %s operator of Gourotine No. %.2f\n", w.Symbol.ID, bd.operation, bd.operation, bd.count)
+						stopReason = "trading moved to \"sell\" direction so I was killed to maintain one thread"
+						killOperator = true
+					} else if bd.operation == "sell" {
+						if buyOrSell.lastPrice > bd.highestPrice+tickSize*2.0 {
+							//log.Printf("accountManager: for %s: for %s controller: Re-adjusting sell operator to sell immediately as sell operation matached sell status and buyOrSell.lastPrice %.8f > bd.highestPrice %.8f \n", w.Symbol.ID, bd.operation, buyOrSell.lastPrice, bd.highestPrice)
+							initData.boughtOrSoldPrice = buyOrSell.lastPrice
+							initData.updateEmaDiffChan = buyOrSell.updateChan
+							initData.influencedBy = "price"
+							stopReason = fmt.Sprintf("controller got a better \"sell\" point \"%.8f\" as informed by checkPrice where lastPrice was higher than highestPrice", buyOrSell.lastPrice)
+							amsc.realBuyOrSellSChan <- initData
+						} else {
+							//log.Printf("accountManager: for %s: for %s controller: did not re-adjust sell operator for immediate selling because lastPrice %.8f is less than highestPrice %.8f + tickSize %.8f * 2.0 \n", w.Symbol.ID, bd.operation, buyOrSell.lastPrice, bd.highestPrice, tickSize)
+							continue
+						}
+					}
+				case buyOrSell = <-emaStatusPriceBuy:
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got \"%s\" from emaStatusPriceBuy\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					if bd.operation == "buy" {
+						if buyOrSell.lastPrice < bd.lowestPrice-tickSize*2.0 {
+							//log.Printf("accountManager: for %s: for %s controller: Re-adjusting buy operator to buy immediately as buy operation matached buy status and buyOrSell.lastPrice %.8f < bd.lowestPrice %.8f \n", w.Symbol.ID, bd.operation, buyOrSell.lastPrice, bd.lowestPrice)
+							initData.boughtOrSoldPrice = buyOrSell.lastPrice
+							initData.updateEmaDiffChan = buyOrSell.updateChan
+							initData.influencedBy = "price"
+							stopReason = fmt.Sprintf("controller got a better \"buy\" point \"%.8f\" as informed by checkPrice where lastPrice is lower than the LowestPrice", buyOrSell.lastPrice)
+							amsc.realBuyOrSellSChan <- initData
+						} else {
+							//log.Printf("accountManager: for %s: for %s controller: did not re-adjust buy operator for immediate buying because lastPrice %.8f is higher than lowestPrice %.8f \n", w.Symbol.ID, bd.operation, buyOrSell.lastPrice, bd.lowestPrice)
+							continue
+						}
+					} else if bd.operation == "sell" {
+						//log.Printf("accountManager: for %s: for %s controller: going to kill a %s operator of Gourotine No. %.2f\n", w.Symbol.ID, bd.operation, bd.operation, bd.count)
+						stopReason = "trading moved to \"buy\" direction so I was killed to maintain one thread"
+						killOperator = true
+					}
+				case bd.highestPrice = <-bd.updateHighestPriceChan:
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got bd.highestPrice updated to %.8f via bd.updateHighestPriceChan\n", w.Symbol.ID, bd.operation, bd.count, bd.highestPrice)
+					continue
+				case bd.lowestPrice = <-bd.updateLowestPriceChan:
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got bd.lowestPrice updated to %.8f via bd.updateLowestPriceChan\n", w.Symbol.ID, bd.operation, bd.count, bd.lowestPrice)
+					continue
+				}
+				//log.Printf("accountManager: for %s: for %s controller: killing the old %s Goroutine No. %.2f operator\n", w.Symbol.ID, bd.operation, bd.operation, bd.count)
+				
+				bd.stopMeChan <- stopReason
+				
+				if bd.operation == "buy" && killOperator == true {
+					log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Entering into hibernation after getting \"%s\" from emaStatusPriceBuy\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					buyOrSell = <-emaStatusPriceBuy
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got \"%s\" from emaStatusPriceBuy\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					//log.Printf("accountManager: for %s: for %s controller: Resurrecting a buy operator to buy immediately as buy operation matached buy status \n", w.Symbol.ID, bd.operation)
+					initData.boughtOrSoldPrice = buyOrSell.lastPrice
+					initData.updateEmaDiffChan = buyOrSell.updateChan
+					initData.influencedBy = "price"
+					amsc.realBuyOrSellSChan <- initData
+					return
+				}else if bd.operation == "sell" && killOperator == true {
+					log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Entering into hibernation after getting \"%s\" from emaStatusPriceSell\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					buyOrSell = <-emaStatusPriceSell		
+					//log.Printf("accountManager: for %s: for %s controller: Goroutine No. %.2f: Got \"%s\" from emaStatusPriceSell\n", w.Symbol.ID, bd.operation, bd.count, buyOrSell.status)
+					//log.Printf("accountManager: for %s: for %s controller: Resurrecting a sell operator to sell immediately as sell operation matached sell status\n", w.Symbol.ID, bd.operation)
+					initData.boughtOrSoldPrice = buyOrSell.lastPrice
+					initData.updateEmaDiffChan = buyOrSell.updateChan
+					initData.influencedBy = "price"
+					amsc.realBuyOrSellSChan <- initData
+					return
+				}
+				return
+			}
+		}(bd, emaStatusPriceBuy, emaStatusPriceSell)
+	}
+}
+type tradePair struct{
+		order float64
+		price float64
+	}
+			
+
+type makeProfitData struct {
+	sender                 string
+	tYPE                   string
+	operation              string
+	boughtOrSoldPrice      float64
+	stopMeChan             chan string
+	stopMeBChan            chan string
+	highestPrice           float64
+	lowestPrice            float64
+	updateHighestPriceChan chan float64
+	updateLowestPriceChan  chan float64
+	updateEmaDiffChan      chan string
+	count                  float64
+	influencedBy              string
+	soldOrBoughtOrderID    string
+	previousProfitTarget float64
+	order float64
+	IsMaster string
+	spentItems []tradePair
+}
+type makeProfitServiceChans struct {
+	fundTransferChans             *transferServiceChans
+	startMakeProfitTickerChan     chan chan *model.Ticker
+	realBuyOrSellSChan            chan makeProfitData
+	makeProfitBuyOrSellController chan makeProfitData
+	bestPriceSellChan             chan getBestPriceStruct
+	bestPriceBuyChan              chan getBestPriceStruct
+	balanceBuyChan                chan getBalanceData
+	balanceSellChan               chan getBalanceData
+	placeOrderSellChan            chan placeOrderData
+	placeOrderBuyChan             chan placeOrderData
+}
+
+func newMakeProfitServiceChans() *makeProfitServiceChans {
+	return &makeProfitServiceChans{
+		realBuyOrSellSChan:            make(chan makeProfitData, 10),
+		makeProfitBuyOrSellController: make(chan makeProfitData, 10),
+		startMakeProfitTickerChan:     make(chan chan *model.Ticker),
+	}
+}
+
+type mergeBTypeData struct {
+	profitTarget  float64
+	stopMsgChan chan string
+	order       float64
+	operation   string
+	count       float64
+	orderID string
+	spentItems []tradePair
+}
+
+type seenReqData struct {
+	want string
+	profitTarget   float64
+	seenRespChan chan mergeBTypeData
+}
+type updateBd struct{
+	want string
+	profitTarget float64
+	order float64
+	orderID string
+	spentItems []tradePair
+}
+type mergeStoredDataType struct{
+	mergeType string
+	stopBChan chan string
+	profitTarget float64
+	updateOrderChan chan updateBd
+	vSeenData mergeBTypeData
+	bd makeProfitData
+	myStopChan chan string
+}
+
+func (w *Worker) makeProfit(mpsc *makeProfitServiceChans) {
+	quantityIncrement, _ := strconv.ParseFloat(w.Symbol.QuantityIncrement, 64)
+	var bd makeProfitData
+	countRecover := make(chan float64)
+	countGen := w.countFunc(countRecover)
+	reasonForEnding := "reason expected"
+	tickSize, _ := strconv.ParseFloat(w.Symbol.TickSize, 64)
+	tickSizeDelta := <-newDeltaV2(w.Symbol.ID, tickSize, mpsc.startMakeProfitTickerChan)
+	seenData := make(chan mergeBTypeData, 1)
+	seenAnyProfitTargetChan := make(chan seenReqData, 1000)
+	deleteSeenChan := make(chan float64, 1)
+	lenSeenChan := make(chan int)
+	mergeAnyProfitTargetChan := make(chan mergeStoredDataType, 1)
+	go func(seenData chan mergeBTypeData, seenAnyProfitTargetChan chan seenReqData, deleteSeenChan chan float64, lenSeenChan chan int) {
+		seen := make(map[float64]mergeBTypeData)
+		lenght := 0
+		for {
+			select {
+			case profitTarget := <-deleteSeenChan:
+				delete(seen, profitTarget)
+				lenght = len(seen)
+			case rd := <-seenAnyProfitTargetChan:
+				if rd.want == "withSameProfitTarget"{
+					if v, ok := seen[rd.profitTarget]; ok {
+						rd.seenRespChan <- v
+					} else {
+						close(rd.seenRespChan)
+					}
+				}else if  rd.want == "withLowerBuyProfitTarget" {
+					go func (){
+						for k,v := range seen {
+							if v.operation == "buy" && rd.profitTarget > k {
+								rd.seenRespChan <- v
+							}
+						}
+						close(rd.seenRespChan)
+					}()					
+				}else if  rd.want == "withHigherSellProfitTarget" {
+					go func (){
+						for k,v := range seen {
+							if v.operation == "sell" && rd.profitTarget < k {
+									rd.seenRespChan <- v
+							}
+						}
+						close(rd.seenRespChan)
+					}()	
+				}				
+			case v := <-seenData:
+				seen[v.profitTarget] = v
+				lenght = len(seen)
+			case lenSeenChan <- lenght:				
+			}
+		}
+	}(seenData, seenAnyProfitTargetChan, deleteSeenChan, lenSeenChan)
+	//Goroutine to merge all running type "B" Goroutines into one profit most enhanced Goroutine 
+	go func(seenData chan mergeBTypeData, frc *transferServiceChans){
+		for {
+			select {
+				case  initData := <- mergeAnyProfitTargetChan:
+					go func(mergetype string, stopBChan chan string, profitTarget float64, bd makeProfitData, v mergeBTypeData, updateOrderChan chan updateBd, myStopChan chan string ){
+						////log.Printf("makeProfit: For %s: The operation to merge matched Goroutines for %s operation | %s | has just started..\n", w.Symbol.ID, v.operation, mergetype)
+						msg := fmt.Sprintf("Type \"B\" Merging: merged me with Goroutine %.8f | %s", bd.count, mergetype)
+						bdStoredDataChan := make(chan transferData)
+						vStoredDataChan := make(chan transferData)
+						openOnceChan := make(chan bool, 1)
+						openOnceAgainChan := make(chan bool, 1)
+						frc.getDataFromStore <- orderStoreData{bd.soldOrBoughtOrderID, v.orderID, bdStoredDataChan, vStoredDataChan}
+						for {
+							select{
+									case vData, okv := <- vStoredDataChan:
+										if bdData, okbd := <-bdStoredDataChan; okbd && okv {
+												//log.Printf("makeProfit: For %s: Retriving previously reserved data for %s and %s with Amounts %.8f and %.8f respectively of currency %s for their merging and updating..\n", w.Symbol.ID, v.orderID, bd.soldOrBoughtOrderID, vData.amount,bdData.amount,vData.currency)
+												vData.amount = vData.amount + bdData.amount      // /v.order * (v.order + bd.order)
+												frc.orderDeleteChan <- bd.soldOrBoughtOrderID 
+												frc.updateOrderStoreChan <- vData												
+												vStoredDataChan = nil												
+												go func (){
+													updateOrderChan <- updateBd{mergetype, v.profitTarget, v.order, v.orderID, v.spentItems}
+													openOnceChan <- true
+												}()
+												continue
+											}else {
+												//log.Printf("makeProfit: For %s: transfer Data not found in Data Store for id %s\n", w.Symbol.ID, v.orderID)
+												myStopChan <- ""
+												return
+											}
+									case <-openOnceAgainChan:
+										////log.Printf("makeProfit: For %s: merging goroutine stops and returns now\n", w.Symbol.ID)
+										close(myStopChan)
+										return
+									case <-openOnceChan:
+										deleteSeenChan <- profitTarget
+										for _, v := range v.spentItems{
+											bd.spentItems = append(bd.spentItems, v)
+										}
+										seenData <- mergeBTypeData{v.profitTarget, stopBChan, v.order + bd.order, bd.operation, bd.count, v.orderID, bd.spentItems}
+										//log.Printf("makeProfit: For %s: if you see this message, then order was updated to %.8f by the merging of %.2f and %.2f Goroutines on price tag of %.8f | %s \n", w.Symbol.ID, v.order+bd.order, v.count, bd.count, v.profitTarget, mergetype)
+										msg = msg + fmt.Sprintf(" of %.8f | order of %.8f | orderID of %s |\n", v.profitTarget, v.order+bd.order, v.orderID)
+										openOnceChan = nil
+										go func(){											
+											v.stopMsgChan <- msg
+											openOnceAgainChan <- true
+										}()
+										continue
+							}
+						}
+					}(initData.mergeType, initData.stopBChan, initData.profitTarget, initData.bd, initData.vSeenData, initData.updateOrderChan, initData.myStopChan)
+				}
+			}
+	}(seenData, mpsc.fundTransferChans)
+	for {
+		select {
+		case bd = <-mpsc.realBuyOrSellSChan:
+			if bd.IsMaster == ""{
+				bd.IsMaster = "no"
+			}	
+			if bd.order == 0 {
+				if strings.Contains("EOSBTC,ETCBTC,BTGBTC,ETHBTC,BCHBTC", w.Symbol.ID){
+					bd.order = quantityIncrement * 5.0
+				}else{
+					bd.order = quantityIncrement
+				}				
+			}
+			bd.count = <-countGen
+			//log.Printf("makeProfit: For %s: Got initData via realBuyOrSellSChan as bd = %v \n", w.Symbol.ID, bd)
+		}
+
+		////log.Printf("makeProfit: For %s: Got count from counter of Goroutines as count = %.8f \n", w.Symbol.ID, bd.count)
+
+		go func(bd makeProfitData, mpsc *makeProfitServiceChans, countRecover chan float64) {
+			log.Println()
+			log.Printf("makeProfit: for %s: type: \"%s\": Goroutine No. %.2f Started with bd = %v\n", w.Symbol.ID, bd.tYPE, bd.count, bd)
+			//defer log.Println()
+			var profit float64
+			var profitTarget float64
+			var bestPrice float64
+			stopChan := make(chan string, 2)
+			updateOrderChan := make(chan updateBd, 10)
+			highestPriceUpdate := make(chan float64, 2)
+			lowestPriceUpdate := make(chan float64, 2)
+			var typeAsender string
+			var typeBsender string
+			buyProfitRate := 0.030
+			sellProfitRate := 0.035
+			//bd.spentItems = make([]tradePair)
+			if w.Symbol.BaseCurrency == "BCH"{
+				buyProfitRate = 0.010
+				sellProfitRate = 0.015
+			}
+			placeOrderChan := make(chan placeOrderData)
+			if bd.sender == "ManagerInitBuy" {
+				bd.stopMeChan = stopChan
+				bd.updateLowestPriceChan = lowestPriceUpdate
+				profitTarget = bd.boughtOrSoldPrice - tickSizeDelta
+				////log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: Advancing by %.2f%%\n", w.Symbol.ID, bd.tYPE, bd.count, tickSizeDelta/bd.boughtOrSoldPrice*100)
+				bd.operation = "buy"
+				bd.lowestPrice = profitTarget
+				//log.Println()
+				////log.Printf("makeProfit: For %s: Sending bd to makeProfitBuyController | bd: %v | \n", w.Symbol.ID, bd)
+				typeAsender = "AdvanceBuy"
+				typeBsender = "BoughtNowSell"
+				mpsc.makeProfitBuyOrSellController <- bd
+			} else if bd.sender == "ManagerInitSell" {
+				bd.stopMeChan = stopChan
+				bd.updateHighestPriceChan = highestPriceUpdate
+				profitTarget = bd.boughtOrSoldPrice + tickSizeDelta
+				bd.operation = "sell"
+				bd.highestPrice = profitTarget
+				//log.Println()
+				////log.Printf("makeProfit: For %s: Sending bd to makeProfitSellController | bd: %v | \n", w.Symbol.ID, bd)
+				typeAsender = "AdvanceSell"
+				typeBsender = "SoldNowBuy"
+				mpsc.makeProfitBuyOrSellController <- bd
+			} else if bd.sender == "AdvanceSell" {
+				profitTarget = bd.previousProfitTarget + tickSizeDelta
+				bd.operation = "sell"
+				typeAsender = "AdvanceSell"
+				typeBsender = "SoldNowBuy"
+				bd.updateHighestPriceChan <- profitTarget
+			} else if bd.sender == "AdvanceBuy" {
+				profitTarget = bd.previousProfitTarget - tickSizeDelta
+				bd.operation = "buy"
+				typeAsender = "AdvanceBuy"
+				typeBsender = "BoughtNowSell"
+				bd.updateLowestPriceChan <- profitTarget
+			} else if bd.sender == "SoldNowBuy" {
+				bd.tYPE = "B"
+				bd.operation = "buy"
+				bd.stopMeChan = nil
+				profitTarget = bd.boughtOrSoldPrice * (1.0 - buyProfitRate)
+				typeBsender = "SoldNowBuy"
+				bd.spentItems = append(bd.spentItems, tradePair{bd.order, bd.boughtOrSoldPrice})
+			} else if bd.sender == "BoughtNowSell" {
+				bd.tYPE = "B"
+				bd.operation = "sell"
+				bd.stopMeChan = nil
+				profitTarget = bd.boughtOrSoldPrice * (1.0 + sellProfitRate)
+				typeBsender = "BoughtNowSell"
+				bd.spentItems = append(bd.spentItems, tradePair{bd.order, bd.boughtOrSoldPrice})
+			}
+			stopBChan := make(chan string)
+			if bd.tYPE == "B" {
+				go func(updateOrderChan chan updateBd, frc *transferServiceChans, lenSeenChan chan int, bd makeProfitData, seenAnyProfitTargetChan chan seenReqData, profitTarget float64, stopBChan chan string, seenData chan mergeBTypeData) {
+					//log.Printf("makeProfit: for %s: has %d Type \"B\" Goroutines runing will try now to merge any duplicate\n", w.Symbol.ID, <-lenSeenChan)
+					for {
+						mySeenReturnChan := make(chan mergeBTypeData)
+						myStopChan := make(chan string)
+						seenAnyProfitTargetChan <- seenReqData{"withSameProfitTarget", profitTarget, mySeenReturnChan}
+						if v, ok := <-mySeenReturnChan; ok {
+							//log.Printf("makeProfit: For %s: have seen a match on %.8f price tag, Goroutine %.2f, now to check if operation matches\n", w.Symbol.ID, profitTarget, v.count)
+							log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: have now seen that Goroutine %.2f with order %.8f is withSameProfitTarget of %.8f same as my price tag %.8f, now to go ahead and merge\n", w.Symbol.ID, bd.tYPE, bd.count, v.count, v.order, v.profitTarget, profitTarget)
+							if bd.operation != v.operation {
+								log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: No match, the seen item is for %s operation\n", w.Symbol.ID, bd.tYPE, bd.count, v.operation)
+								break
+							}
+							mergeAnyProfitTargetChan <- mergeStoredDataType{"withSameProfitTarget", stopBChan, profitTarget, updateOrderChan, v, bd, myStopChan}
+							if _, ok := <-myStopChan; !ok {
+								return
+							}
+						} else {
+							seenData <- mergeBTypeData{profitTarget, stopBChan, bd.order, bd.operation, bd.count, bd.soldOrBoughtOrderID, bd.spentItems}
+						}
+						//log.Printf("makeProfit: For %s: did not see a match on %.8f price tag, now moving on...\n", w.Symbol.ID, profitTarget)
+						break
+					}
+					return
+				}(updateOrderChan, mpsc.fundTransferChans, lenSeenChan, bd, seenAnyProfitTargetChan, profitTarget, stopBChan, seenData)
+			}
+			mySeenReturnChan := make(chan mergeBTypeData)
+			if bd.tYPE == "B" &&  bd.operation == "sell"{
+				seenAnyProfitTargetChan <- seenReqData{"withHigherSellProfitTarget", profitTarget, mySeenReturnChan}
+			}else if bd.tYPE == "B" &&  bd.operation == "buy" {
+				seenAnyProfitTargetChan <- seenReqData{"withLowerBuyProfitTarget", profitTarget, mySeenReturnChan}
+			}
+			for {
+				var orderID string
+				select {
+				case bdUpdate := <-updateOrderChan:
+					for _, v := range bdUpdate.spentItems{
+						bd.spentItems = append(bd.spentItems, v)
+					}
+					bd.order = bdUpdate.order + bd.order
+					log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: merging matched order quantities summing up to %.8f%s at %.8f%s price and merging orderIDs: %s to be %s\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, bd.order, w.Symbol.BaseCurrency, bdUpdate.profitTarget, w.Symbol.QuoteCurrency, bd.soldOrBoughtOrderID, bdUpdate.orderID)
+					if bdUpdate.want == "withHigherSellProfitTarget" {
+						if profitTarget < bdUpdate.profitTarget {
+							profitTarget = bdUpdate.profitTarget
+							bd.IsMaster = "yes"
+						}else{
+							panic("Current profitTarget is not supposed to be greater than seen profitTarget being merged with at \"withHigherSellProfitTarget\"")
+						}
+					}else if bdUpdate.want == "withLowerBuyProfitTarget" {
+						if profitTarget > bdUpdate.profitTarget {
+							profitTarget = bdUpdate.profitTarget
+							bd.IsMaster = "yes"
+						}else{
+							panic("Current profitTarget is not supposed to be less than seen profitTarget being merged with at \"withLowerBuyProfitTarget\"")
+						}
+					}else if bdUpdate.want == "withSameProfitTarget"{
+						bd.IsMaster = "yes"
+					}
+					bd.soldOrBoughtOrderID = bdUpdate.orderID
+					continue
+				case sig := <-bd.stopMeChan:
+					countRecover <- bd.count
+					reasonForEnding = fmt.Sprintf("Stopped via bd.stopMeChan: %s", sig)
+					log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Ended... |reasonForEnding = %s |sOrbOrderID = %s |\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, reasonForEnding, bd.soldOrBoughtOrderID)
+					return
+				case sig := <-stopBChan:
+					countRecover <- bd.count
+					reasonForEnding = fmt.Sprintf("Stopped via bd.stopMeBChan: %s", sig)
+					log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Ended... |reasonForEnding = %s |sOrbOrderID = %s |\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, reasonForEnding, bd.soldOrBoughtOrderID)
+					return
+				default:
+					if bd.operation == "sell" {
+						bestPrice = w.getBestPriceFunc(bd.operation, bd.tYPE, mpsc.bestPriceSellChan)
+						if bestPrice < profitTarget {
+							//log.Printf("makeProfit: For %s: type: \"%s\": in sell operation: Goroutine No. %.2f: for order %.8f: bestPrice %.8f is less than profitTarget %.8f, so is not good\n", w.Symbol.ID, bd.tYPE, bd.count, bd.order, bestPrice, profitTarget)
+							if bd.tYPE == "B" {
+								if v, ok := <-mySeenReturnChan; ok {
+									log.Printf("makeProfit: For %s: type: \"%s\": in sell operation: Goroutine No. %.2f: have now seen that Goroutine %.2f with order %.8f is withHigherSellProfitTarget of %.8f higher than my price tag %.8f, now to go ahead and merge\n", w.Symbol.ID, bd.tYPE, bd.count, v.count, v.order, v.profitTarget, profitTarget)
+									myStopChan := make(chan string)
+									mergeAnyProfitTargetChan <- mergeStoredDataType{"withHigherSellProfitTarget", stopBChan, profitTarget, updateOrderChan, v, bd, myStopChan}
+								}else{
+									//log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: have not seen a Goroutine withHigherSellProfitTarget on %.8f price tag...\n", w.Symbol.ID, bd.tYPE, bd.count, profitTarget)
+								}
+							}
+							continue
+						}
+						//log.Printf("makeProfit: For %s: type: \"%s\": in sell operation: Goroutine No. %.2f: for order %.8f: bestPrice %.8f is greater than profitTarget %.8f, so is good\n", w.Symbol.ID, bd.tYPE, bd.count, bd.order, bestPrice, profitTarget)
+						placeOrderChan = mpsc.placeOrderSellChan
+					} else if bd.operation == "buy" {
+						bestPrice = w.getBestPriceFunc(bd.operation, bd.tYPE, mpsc.bestPriceBuyChan)
+						if bestPrice > profitTarget {
+							//log.Printf("makeProfit: For %s: type: \"%s\": in buy operation: Goroutine No. %.2f: for order %.8f: bestPrice %.8f is greater than profitTarget %.8f, so is not good\n", w.Symbol.ID, bd.tYPE, bd.count, bd.order, bestPrice, profitTarget)
+							if bd.tYPE == "B" {
+								if v, ok := <-mySeenReturnChan; ok {
+									log.Printf("makeProfit: For %s: type: \"%s\": in buy operation: Goroutine No. %.2f: have now seen that Goroutine %.2f with order %.8f is withLowerBuyProfitTarget of %.8f lower than my price tag %.8f, now to go ahead and merge\n", w.Symbol.ID, bd.tYPE, bd.count, v.count, v.order, v.profitTarget, profitTarget)
+									myStopChan := make(chan string)
+									mergeAnyProfitTargetChan <- mergeStoredDataType{"withLowerBuyProfitTarget", stopBChan, profitTarget, updateOrderChan, v, bd, myStopChan}
+								}else{
+								//log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: have not seen a Goroutine withLowerBuyProfitTarget on %.8f price tag... \n", w.Symbol.ID, bd.tYPE, bd.count, profitTarget)									
+								}
+							}
+							continue
+						}
+						//log.Printf("makeProfit: For %s: type: \"%s\": in buy operation: Goroutine No. %.2f: for order %.8f: bestPrice %.8f is less than profitTarget %.8f, so is good\n", w.Symbol.ID, bd.tYPE, bd.count, bd.order, bestPrice, profitTarget)
+						placeOrderChan = mpsc.placeOrderBuyChan
+					}
+					//log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: for order %.8f: Placing Order %.8f At best Price %.8f now ...\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, bd.order, bd.order, bestPrice)
+					if bd.tYPE == "B" {
+						deleteSeenChan <- profitTarget
+					}
+					orderID = w.placeOrderFunc(bestPrice, bd, placeOrderChan, mpsc.fundTransferChans)
+					if orderID != "" && orderID != "Insufficient funds" {
+						sORb := "sold"
+						var currency string
+						var amount float64
+						var transferType string
+						takeLiquidityRate, _ := strconv.ParseFloat(w.Symbol.TakeLiquidityRate, 64)
+						if bd.tYPE == "B" {
+							if bd.IsMaster == "yes" {
+								if bd.operation == "sell" {
+									bd.updateLowestPriceChan <- math.MaxFloat64
+									////log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: updating the LowestPrice Target with math.MaxFloat64 via bd.updateLowestPriceChan\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count)
+								}else if bd.operation == "buy" {
+									bd.updateHighestPriceChan <- math.SmallestNonzeroFloat64
+									////log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: updating the HighestPrice Terget with math.SmallestNonzeroFloat64 via bd.updateHighestPriceChan\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count)							
+								}else{
+									panic("bd.operation == nothing line 1089")
+								}
+							}
+							
+							if bd.operation == "sell" {
+								for _, v := range bd.spentItems{
+									profit += v.order*bestPrice-v.order*v.price
+								}
+							}else if bd.operation == "buy" {
+								for _, v := range bd.spentItems{
+									profit += v.order*v.price-v.order*bestPrice
+								}
+								sORb = "bought"
+							}
+							countRecover <- bd.count
+							////log.Printf("makeProfit: For %s: Order was sucessfully %s \n", w.Symbol.ID, sORb) 
+							reasonForEnding = fmt.Sprintf("Made %.8f %s Profit: %s %.8f order value at %.8f %s.. now going to rest", profit, w.Symbol.QuoteCurrency, sORb, bd.order, bestPrice, w.Symbol.QuoteCurrency)
+							log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Ended... |reasonForEnding = %s | sOrbOrderID = %s |\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, reasonForEnding, bd.soldOrBoughtOrderID)
+							return
+						}
+						//Advancing Goroutine started
+						bd.boughtOrSoldPrice = bestPrice
+						bd.previousProfitTarget = profitTarget
+						bd.sender = typeAsender
+						////log.Printf("makeProfit: For %s: Advancing Operator as the operation was type \"A\"\n", w.Symbol.ID)
+						mpsc.realBuyOrSellSChan <- bd
+						if bd.influencedBy != "metTarget"{
+							bd.updateEmaDiffChan <- "yesUpdateEmaDiff"
+							//log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: Updating EMADIFF, operation was influnced by \"%s\" and Handing over to a profit making (type \"B\") Goroutine\n", w.Symbol.ID, bd.tYPE, bd.count, bd.influencedBy)	
+						}
+						//Advancing Goroutine completed
+
+						//Profit making Goroutine initializes from here
+						bd.tYPE = "B"
+						if bd.operation == "sell" {
+							bd.operation = "buy"
+							sORb = "sold"
+							currency = w.Symbol.QuoteCurrency
+							amount = Trunc8(bd.order * bd.boughtOrSoldPrice * (1.0 - buyProfitRate) * (1.0 + takeLiquidityRate))
+						} else if bd.operation == "buy" {
+							bd.operation = "sell"
+							sORb = "bought"
+							currency = w.Symbol.BaseCurrency
+							amount = bd.order
+						}
+						transferType = "exchangeToBank"
+						bd.sender = typeBsender
+						bd.soldOrBoughtOrderID = orderID
+						////log.Printf("makeProfit: For %s: Order was sucessfully %s \n", w.Symbol.ID, sORb)
+							transInfo := transferData{
+								w.Symbol,
+								currency,
+								amount,
+								transferType,
+								nil,
+								bd.boughtOrSoldPrice,
+								bd.soldOrBoughtOrderID,
+								sORb,
+								bd.count,
+							}
+							reserveSoldOrBoughtAssert(transInfo, mpsc.fundTransferChans)
+						mpsc.realBuyOrSellSChan <- bd
+						countRecover <- bd.count
+						reasonForEnding = fmt.Sprintf("%s %.8f order value sucessfully at %.8f %s, Handed over to a Type \"B\" for profit making, so going to rest", sORb, bd.order, bestPrice, w.Symbol.QuoteCurrency)
+						log.Printf("makeProfit: For %s: type: \"A\": in %s operation: Goroutine No. %.2f: Ended... |reasonForEnding = %s |sOrbOrderID = %s |\n", w.Symbol.ID, bd.operation, bd.count, reasonForEnding, bd.soldOrBoughtOrderID)
+						return
+					}
+					//log.Printf("makeProfit: For %s: type: \"%s\": Goroutine No. %.2f: Order was not sucessful may repeat order\n", w.Symbol.ID, bd.tYPE, bd.count)
+				}
+				if bd.IsMaster == "yes" {
+					//log.Printf("makeProfit: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: !!!...Failed Master...!!! order: %.8f | BestPrice: %.8f | orderID: %s | \n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, bd.order, bestPrice, bd.soldOrBoughtOrderID)				
+				}
+				if bd.influencedBy != "metTarget"{
+					bd.updateEmaDiffChan <- "noMayRepeat"
+				}
+				if orderID == "Insufficient funds" {
+					if bd.tYPE != "B" {
+						//Advancing Goroutine on type A
+						bd.boughtOrSoldPrice = bestPrice
+						bd.previousProfitTarget = profitTarget
+						bd.sender = typeAsender
+					} else {
+						//Repeat Goroutine on type B
+						bd.sender = typeBsender
+					}
+					time.Sleep(time.Minute * 10)
+					mpsc.realBuyOrSellSChan <- bd
+					countRecover <- bd.count
+					return
+				}
+			}
+		}(bd, mpsc, countRecover)
+	}
+}
+
+func getLastPrice(startTickerChan chan chan *model.Ticker) float64 {
+	tickerChan := make(chan *model.Ticker)
+	startTickerChan <- tickerChan
+	sTicker := <-tickerChan
+	lastPrice, _ := strconv.ParseFloat(sTicker.Last, 64)
+	return lastPrice
+}
+
+func (w *Worker) getBestPriceFunc(tYPE, opType string, startBestPriceChan chan getBestPriceStruct) float64 {
+	getBestPriceResultChan := make(chan getBestPriceData)
+	startBestPriceChan <- getBestPriceStruct{w, tYPE, getBestPriceResultChan, opType}
+	p := <-getBestPriceResultChan
+	bestPrice := p.data
+	if p.err != nil {
+		log.Printf("getBestPriceFunc: For %s: FATAL: %v\n", w.Symbol.ID, p.err)
+		time.Sleep(time.Minute)
+	}
+	return bestPrice
+}
+
+type getBestPriceData struct {
+	data float64
+	err  error
+}
+type getBestPriceStruct struct {
+	w         *Worker
+	orderType string
+	dataChan  chan getBestPriceData
+	opType    string
+}
+type getBestPriceServiceChans struct {
+	bestPriceSellChan chan getBestPriceStruct
+	bestPriceBuyChan  chan getBestPriceStruct
+	mainBestPriceChan chan getBestPriceStruct
+}
+
+func newBestPriceServiceChans() *getBestPriceServiceChans {
+	return &getBestPriceServiceChans{
+		bestPriceSellChan: make(chan getBestPriceStruct, 10),
+		bestPriceBuyChan:  make(chan getBestPriceStruct, 10),
+	}
+}
+
+func (w *Worker) getBestPriceV3(gBPSC *getBestPriceServiceChans) {
+	var bPData getBestPriceStruct
+	for {
+		select {
+		case bPData = <-gBPSC.bestPriceSellChan:
+		case bPData = <-gBPSC.bestPriceBuyChan:
+		}
+		go func(bPData getBestPriceStruct) {
+			var orderBook *model.OrderBook
+			var err error
+			var errorMessage string
+			miscount := 1.0
+			for {
+				orderBook, err = bPData.w.API.GetOrderBook(bPData.w.Symbol.ID)
+				if err != nil {
+					errorMessage = fmt.Sprintf("FATAL2: %v", err)
+					log.Printf("getBestPriceV3: For %s: missed=%.2f %v", bPData.w.Symbol.ID, miscount, errorMessage)
+					time.Sleep(time.Millisecond * 10)
+					miscount++
+					continue
+				} else {
+					miscount = 1.0
+					break
+				}
+			}
+			bidPrice, _ := strconv.ParseFloat(orderBook.Bid[0].Price, 64)
+			askPrice, _ := strconv.ParseFloat(orderBook.Ask[0].Price, 64)
+			tickSize, _ := strconv.ParseFloat(bPData.w.Symbol.TickSize, 64)
+			var BestPrice float64
+			if bPData.orderType == "buy" {
+				BestPrice = askPrice - tickSize
+			} else if bPData.orderType == "sell" {
+				BestPrice = bidPrice + tickSize
+			}
+			//log.Println()
+			bPData.dataChan <- getBestPriceData{data: BestPrice, err: nil}
+		}(bPData)
+		time.Sleep(time.Millisecond * 300)
+	}
+}
+
+func (w *Worker) getBalanceFunc(startBalanceChan chan getBalanceData) (baseCurrencyBalance float64, quoteCurrencyBalance float64) {
+	quoteBalRespChan := make(chan float64)
+	baseBalRespChan := make(chan float64)
+	startBalanceChan <- getBalanceData{w.Symbol.BaseCurrency, baseBalRespChan}
+	baseCurrencyBalance = <-baseBalRespChan
+	startBalanceChan <- getBalanceData{w.Symbol.QuoteCurrency, quoteBalRespChan}
+	quoteCurrencyBalance = <-quoteBalRespChan
+	//log.Printf("getBalanceFunc Worker %s | quoteCurrencyBalance %.8f | baseCurrencyBalance %.8f |\n", w.Symbol.ID, quoteCurrencyBalance, baseCurrencyBalance)
+	return baseCurrencyBalance, quoteCurrencyBalance
+}
+
+type getBalanceData struct {
+	currency    string
+	balRespChan chan float64
+}
+type getBalanceServiceChans struct {
+	balanceSellChan       chan getBalanceData
+	balanceBuyChan        chan getBalanceData
+	balancePlaceOrderChan chan getBalanceData
+}
+
+func newGetBalanceServiceChans() *getBalanceServiceChans {
+	return &getBalanceServiceChans{
+		balanceSellChan:       make(chan getBalanceData, 10),
+		balanceBuyChan:        make(chan getBalanceData, 10),
+		balancePlaceOrderChan: make(chan getBalanceData, 10),
+	}
+}
+func (w *Worker) getBalance(gbsc *getBalanceServiceChans) {
+	cBalChan := make(chan float64)
+	var currency string
+	for {
+		select {
+		case balData := <-gbsc.balanceSellChan:
+			currency = balData.currency
+			cBalChan = balData.balRespChan
+			break
+		case balData := <-gbsc.balanceBuyChan:
+			currency = balData.currency
+			cBalChan = balData.balRespChan
+			break
+		case balData := <-gbsc.balancePlaceOrderChan:
+			currency = balData.currency
+			cBalChan = balData.balRespChan
+			break
+		}
+		go func(currency string, cBalChan chan float64) {
+			var err error
+			var tradeBalances model.Balances
+			var CurrencyBalance float64
+			for {
+				tradeBalances, err = w.API.GetTradingBalances()
+				if err != nil {
+					log.Printf("%s FATAL1: %v\n", w.Symbol.ID, err)
+					time.Sleep(time.Second * 10)
+					continue
+				}
+				break
+			}
+			for _, v := range tradeBalances {
+				if v.Currency == currency {
+					CurrencyBalance, _ = strconv.ParseFloat(v.Available, 64)
+					break
+				}
+			}
+			cBalChan <- CurrencyBalance
+			return
+		}(currency, cBalChan)
+		time.Sleep(time.Millisecond * 2000)
+	}
+}
+
+type emaData struct {
+	ema55 float64
+	ema34 float64
+	ema20 float64
+	ema13 float64
+	ema8  float64
+	ema4  float64
+}
+type eMAServiceChans struct {
+	startEmaPriceChan  chan chan emaData
+}
+
+func newEMAServiceChans() *eMAServiceChans {
+	return &eMAServiceChans{
+		startEmaPriceChan:  make(chan chan emaData),
+	}
+}
+
+//Emav3
+func (w *Worker) getEMAv3(gEMA *eMAServiceChans) {
+	EmaChan := make(chan emaData)
+	var Ema55, Ema34, Ema20, Ema13, Ema8, Ema4 float64
+	var tt int
+	for {
+		select {
+		case EmaChan = <-gEMA.startEmaPriceChan:
+			tt = 2000
+			break
+		}
+		ema55 := ema.NewEma(alphaFromN(55))
+		ema34 := ema.NewEma(alphaFromN(34))
+		ema20 := ema.NewEma(alphaFromN(20))
+		ema13 := ema.NewEma(alphaFromN(13))
+
+			//sma := movavg.ThreadSafe(movavg.NewSMA(8))
+			CandleStreamChan := make(chan model.Candle)
+			go func(period string) {
+				var candles *model.Candles
+				var err error
+				for {
+					candles, err = w.API.GetCandles(w.Symbol.ID, w.candleLimit, period)
+					if err != nil {
+						////log.Printf("getEMA: For %s: FATAL9: %v\n", w.Symbol.ID, err)
+						time.Sleep(time.Second * 10)
+						continue
+					}
+					break
+				}
+				////log.Printf("getEMA: GetCandle: go func1 For %s: Got Candles sucessfully via Hitbtc API now streaming down via CandleStreamChan\n", w.Symbol.ID)
+				for _, Candle := range *candles {
+					////log.Printf("getEMA: GetCandle: go func1 For %s: Range Candles and Sending Candle %v ...\n", w.Symbol.ID, Candle)
+					CandleStreamChan <- Candle
+				}
+				close(CandleStreamChan)
+				return
+			}( w.candlePeriod)
+
+			for Candle := range CandleStreamChan {
+				////log.Printf("getEMA: GetCandle: go func2 For %s: Got Candle %v ...\n", w.Symbol.ID, Candle)
+				closedPrice, _ := strconv.ParseFloat(Candle.Close, 64)
+					ema55.Step(closedPrice)
+					ema34.Step(closedPrice)
+					ema20.Step(closedPrice)
+					ema13.Step(closedPrice)
+			}
+				Ema55 = ema55.Compute()
+				Ema34 = ema34.Compute()
+				Ema20 = ema20.Compute()
+				Ema13 = ema13.Compute()
+			////log.Printf("getEMA: GetCandle: go func2 For %s: Now sending Computed Ema %v down EmaChan to Caller ...\n", w.Symbol.ID, emaData{Ema55, Ema34, Ema20, Ema13, Ema8})
+			EmaChan <- emaData{Ema55, Ema34, Ema20, Ema13, Ema8, Ema4}
+			time.Sleep(time.Millisecond * time.Duration(tt))
+	}
+}
+
+func (w *Worker) placeOrderFunc(bestPrice float64, bd makeProfitData, placeOrderChan chan placeOrderData, tc *transferServiceChans) string {
+	//placing buyOrder now and confirming transaction
+	placeOrderRespChan := make(chan placeOrderResp, 1)
+	clientOrderID := <-w.uUIDGetChan
+	//The Ultimate place buyOrder************* BuyOrder *******************
+	holdApprovalChan := w.placeOrderApprovalChan
+	if bd.operation == "buy" && bd.IsMaster == "yes" {
+		//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s This is a \"Buy Master Order\" other \"buy\" orders must wait now for approval before they continue\n", w.Symbol.ID, bd.order, clientOrderID)
+		w.placeOrderApprovalChan = nil
+		go func(Approving chan bool){
+			for{
+				select{
+				case <- time.After(time.Millisecond * 550):
+					//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s being granted approval after time has elapsed\n", w.Symbol.ID, bd.order, clientOrderID)		
+					w.placeOrderApprovalChan = Approving
+				}
+				break
+			}
+			return
+		}(holdApprovalChan)
+	}
+	if bd.soldOrBoughtOrderID != "" && refundStoreData(bd.soldOrBoughtOrderID, tc) {
+		//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s Luckily has a reserved fund to use from Main account of previous orderID %s: Order may succeed\n", w.Symbol.ID, bd.order, clientOrderID, bd.soldOrBoughtOrderID)
+		placeOrderChan <- placeOrderData{clientOrderID, w.Symbol, bd.order, bd.operation, bestPrice, placeOrderRespChan}
+		w.placeOrderApprovalChan = holdApprovalChan
+	}else{
+		//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s has no reserved fund to use from Main account | previous orderID is \"%s\" | may require an approval to continue...\n", w.Symbol.ID, bd.order, clientOrderID, bd.soldOrBoughtOrderID)				
+		if bd.operation == "buy"{
+			for {
+				select{
+				case <-w.placeOrderApprovalChan:
+					//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s Approval granted placing order now...\n", w.Symbol.ID, bd.order, clientOrderID)				
+					placeOrderChan <- placeOrderData{clientOrderID, w.Symbol, bd.order, bd.operation, bestPrice, placeOrderRespChan}
+					break
+				}
+				break
+			}	
+		}else{
+			//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s Approval not required for a sell operation, placing order now...\n", w.Symbol.ID, bd.order, clientOrderID)				
+			placeOrderChan <- placeOrderData{clientOrderID, w.Symbol, bd.order, bd.operation, bestPrice, placeOrderRespChan}		
+		}
+	}
+	//log.Printf("placeOrderFunc: For %s: Order Placed now\n", w.Symbol.ID)
+	var soldOrBought string
+	if bd.operation == "buy" {
+		soldOrBought = "Bought"
+	} else {
+		soldOrBought = "Sold"
+	}
+loop:
+	for {
+		select {
+		case OrderResult := <-placeOrderRespChan: 
+			if OrderResult.status == "" || OrderResult.status == "timedOut" {
+				log.Printf("placeOrderFunc: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Order %.8f has timed out; %sing of %.8f%s Not confirmed\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, bd.order, bd.operation, bestPrice, w.Symbol.QuoteCurrency)
+				break loop
+			}
+			if (OrderResult.status == "initializing order") || (OrderResult.status == "doOrder") {
+				//log.Printf("placeOrderFunc: For %s: Order %.8f with ID %s has status %s and will still be waiting ...\n", w.Symbol.ID, bd.order, OrderResult.clientOrderID, OrderResult.status)
+				continue
+			}
+			if OrderResult.status == "new" || OrderResult.status == "partiallyFilled" {
+				//log.Printf("placeOrderFunc: For %s: Order %.8f placed sucessfully and still \"%s\" %s not yet confirmed\n", w.Symbol.ID, bd.order, OrderResult.status, soldOrBought)
+				continue
+			}
+			if OrderResult.err == nil && OrderResult.status == "filled" { 
+				log.Printf("placeOrderFunc: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Order %.8f with ID %s filled sucessfully %s at %.8f %s confirmed Hurrey!!!!\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, OrderResult.order, OrderResult.clientOrderID, soldOrBought, OrderResult.boughtPrice, w.Symbol.QuoteCurrency)
+				//log.Printf("placeOrderFunc: for %s: %s No...: %s %s at %.8f%s \n", w.Symbol.ID, soldOrBought, w.Symbol.BaseCurrency, soldOrBought, bestPrice, w.Symbol.QuoteCurrency)
+				return clientOrderID
+			}
+			if OrderResult.status == "Insufficient funds" { 
+				log.Printf("placeOrderFunc: For %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Order %.8f with ID %s has \" Insufficient funds \" status therefore was not %s sucessfully\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, OrderResult.order, OrderResult.clientOrderID, soldOrBought)
+				return "Insufficient funds"
+			}
+			log.Printf("placeOrderFunc: for %s: type: \"%s\": in %s operation: Goroutine No. %.2f: Unrecognized Order Status \"%s\"\n", w.Symbol.ID, bd.tYPE, bd.operation, bd.count, OrderResult.status)
+			break loop
+		}
+	}
+	return ""
+}
+
+type store map[string]transferData
+
+func reserveSoldOrBoughtAssert(transInfo transferData, trsc *transferServiceChans) {
+	transferResp := make(chan transferResp)
+	transInfo.transferRespChan = transferResp
+	trsc.startReserveTransferChan <- transInfo
+	tfr := <-transferResp
+	if tfr.id != "" && tfr.err == nil { // type: \"%s\": in %s operation: Goroutine No. %.2f:  bd.tYPE, bd.operation, bd.count, 
+		log.Printf("reserveSoldOrBoughtAssert: For %s: from Goroutine No. %.2f: Successful reservation of %.8f amount of %s transaction on %s", transInfo.sm.ID, transInfo.bdCount, transInfo.amount, transInfo.orderResultStatus, transInfo.currency)
+		return
+	}
+	log.Printf("reserveSoldOrBoughtAssert: For %s: from Goroutine No. %.2f: unable to reserve %.8f amount of %s transaction on %s", transInfo.sm.ID, transInfo.bdCount, transInfo.amount, transInfo.orderResultStatus, transInfo.currency)
+	return
+}
+
+func refundStoreData(orderID string, tc *transferServiceChans) bool {
+
+	transferRespChan := make(chan transferResp)
+	tfDataChan := make(chan transferData)
+	tc.getDataFromStore <- orderStoreData{orderID, "refundStoreData", tfDataChan, nil}
+	var v transferData
+	var ok bool
+	if v, ok = <-tfDataChan; ok {
+		v.transferRespChan = transferRespChan
+		tc.startRefundTransferChan <- v
+	} else {
+		log.Printf("refundStoreData: Unsuccessful refunding from main account, orderID \"%s\" not found", orderID)
+		return false
+	}
+	tfr := <-transferRespChan
+	if tfr.id != "" && tfr.err == nil {
+		log.Printf("refundStoreData: For %s: Successful refunding %.8f amount of orderid %s transaction at %.8f price| Origin Goroutine No. %.2f:", v.currency, v.amount, v.id, v.price, v.bdCount)
+		return true
+	}
+	log.Printf("refundStoreData: For %s: unable to refund %.8f amount of %s transaction on %.8f... | error: %v | id: %s | Origin Goroutine No. %.2f:", v.currency, v.amount, v.id, v.price, tfr.err, tfr.id, v.bdCount)
+	return false
+}
+
+type transferServiceChans struct {
+	startReserveTransferChan chan transferData
+	startRefundTransferChan  chan transferData
+	getDataFromStore         chan orderStoreData
+	updateOrderStoreChan  chan transferData
+	orderDeleteChan chan string
+}
+
+func newTransferServiceChans() *transferServiceChans {
+	return &transferServiceChans{
+		startReserveTransferChan: make(chan transferData, 100),
+		getDataFromStore:         make(chan orderStoreData, 100),
+		startRefundTransferChan:  make(chan transferData, 100),
+		updateOrderStoreChan: make(chan transferData, 100), 
+		orderDeleteChan:  make(chan string, 100),
+	}
+}
+
+type transferData struct {
+	sm                *model.Symbol
+	currency          string
+	amount            float64
+	transferType      string //bankToExchange or exchangeToBank
+	transferRespChan  chan transferResp
+	price             float64
+	id                string
+	orderResultStatus string
+	bdCount float64
+}
+
+type transferResp struct {
+	id  string
+	err error
+}
+type orderStoreData struct {
+	bdID               string
+	vID 			string
+	transferDataCurrentChan chan transferData
+	transferDataPastChan chan transferData
+
+}
+
+//Transfer ...
+func (w *Worker) Transfer(trsc *transferServiceChans) {
+	OrderStore := store{}
+	var trd transferData
+	for {
+		//time.Sleep(time.Millisecond*2000)
+		select {
+		case id := <-trsc.orderDeleteChan:
+			delete(OrderStore, id)
+			//log.Printf("Transfer: For worker %s: Got store delete request for %s and done deleting it", w.Symbol.ID, id)
+			continue
+		case trd = <- trsc.updateOrderStoreChan:
+			OrderStore[trd.id] = trd
+			//log.Printf("Transfer: For worker %s: Got store update request for %s and done updating its data amount to %.8f", w.Symbol.ID, trd.id, trd.amount)			
+			continue
+		case oSD := <-trsc.getDataFromStore:
+			if oSD.vID == "refundStoreData" {
+				//log.Printf("Transfer: For worker %s: Got store get request from refundStoreData for %s and started Goroutine", w.Symbol.ID, oSD.bdID)
+				go func() {
+					if v, ok := OrderStore[oSD.bdID]; ok {
+						oSD.transferDataCurrentChan <- v
+					} else {
+						close(oSD.transferDataCurrentChan)
+					}
+				}()
+			}else {
+				//log.Printf("Transfer: For worker %s: Got store get request from mergingFunc for %s and %s and starting Goroutine", w.Symbol.ID, oSD.bdID, oSD.vID)
+				go func() {
+					vbd, okbd := OrderStore[oSD.bdID]
+					vv, okv := OrderStore[oSD.vID]
+					if okbd && okv {
+						oSD.transferDataPastChan <- vv
+						oSD.transferDataCurrentChan <- vbd
+					} else {
+						close(oSD.transferDataCurrentChan)
+						close(oSD.transferDataPastChan)
+					}
+				}()
+			}			
+			continue
+		case trd = <-trsc.startRefundTransferChan: //bankToExchange or exchangeToBank
+			trd.transferType = "bankToExchange"
+			break
+		case trd = <-trsc.startReserveTransferChan:
+			trd.transferType = "exchangeToBank"
+			OrderStore[trd.id] = trd
+			break
+		}
+		go func(trd transferData, orderDeleteChan chan string) {
+		//log.Printf("Transfer: For worker %s: Got %v and started Goroutine", w.Symbol.ID, trd)
+		//defer log.Printf("Transfer: For worker %s: Goroutine ended for %v", w.Symbol.ID, trd)
+		var dataHolder transferResp
+		respChan := trd.transferRespChan
+		respChan = nil
+		lastForM := time.After(time.Millisecond * 30000)
+		var transferOk *model.TransferOk
+		var err error
+		for {
+			select {
+			case <-lastForM:
+				//log.Printf("Transfer: For worker %s: Timedout on transfer of %v ", w.Symbol.ID, trd)
+				trd.transferRespChan <- transferResp{"Timedout", err}
+				if trd.transferType == "exchangeToBank" {
+					orderDeleteChan <- trd.id
+				}
+				return //break loop 
+			case respChan <- dataHolder:
+				//log.Printf("Transfer: For worker %s: Sent response on transfer of %v ", w.Symbol.ID, trd)
+				return //break loop 
+			default:
+				amountAsString := fmt.Sprintf("%.12f", trd.amount)
+				transferOk, err = w.API.Transfer(trd.currency, amountAsString, trd.transferType) //bankToExchange or exchangeToBank
+				if err != nil {
+					errMsg := fmt.Sprintf("%v", err)
+					if strings.Contains(errMsg, "Insufficient funds") {
+						dataHolder = transferResp{"Insufficient funds", err}
+						respChan = trd.transferRespChan
+						if trd.transferType == "exchangeToBank" {
+							orderDeleteChan <- trd.id
+						}
+						continue
+					}
+					//log.Printf("Transfer: For worker %s: For %s: Fatal1: %v | Amount: %s | TransferType: %s |\n", w.Symbol.ID, trd.currency, err, amountAsString, trd.transferType)
+					time.Sleep(time.Millisecond * 10000)
+					continue
+				}
+				dataHolder = transferResp{transferOk.Id, err}
+				respChan = trd.transferRespChan
+				if trd.transferType == "bankToExchange" {
+					orderDeleteChan <- trd.id
+				}
+			}
+		}
+		}(trd, trsc.orderDeleteChan)
+	}
+}
+
+type placeOrderResp struct {
+	clientOrderID string
+	status        string
+	err           error
+	order         float64
+	boughtPrice   float64
+}
+
+type placeOrderData struct {
+	clientOrderID string
+	sm            *model.Symbol
+	order         float64
+	orderType     string
+	bestPrice     float64
+	//baseCurrencyBalance float64
+	placeOrderRespChan chan placeOrderResp
+}
+
+type placeOrderServiceChans struct {
+	placeOrderSellChan chan placeOrderData
+	placeOrderBuyChan  chan placeOrderData
+	startBalanceChan   chan getBalanceData
+}
+
+func newPlaceOrderServiceChans() *placeOrderServiceChans {
+	return &placeOrderServiceChans{
+		placeOrderSellChan: make(chan placeOrderData, 10),
+		placeOrderBuyChan:  make(chan placeOrderData, 10),
+	}
+}
+
+func (w *Worker) placeOrderv3(sPOCs *placeOrderServiceChans) {
+	var myOrderData placeOrderData
+	var orderOwner string
+	startBalanceChan := sPOCs.startBalanceChan
+	for {
+		select {
+		case myOrderData = <-sPOCs.placeOrderSellChan:
+			orderOwner = "makeProfitSell"
+		case myOrderData = <-sPOCs.placeOrderBuyChan:
+			orderOwner = "makeProfitBuy"
+		}
+		go func(orderData placeOrderData, orderOwner string, startBalanceChan chan getBalanceData) {
+			BestPriceAsString := fmt.Sprintf("%.12f", orderData.bestPrice)
+			orderAmount := fmt.Sprintf("%.10f", orderData.order)
+			var placedOrder *model.Order
+			var gottenPlacedOrder *model.Order
+			var err error
+			var oldBaseBalance float64
+			var ErrorMessage string
+			orderResultChan := orderData.placeOrderRespChan
+			orderResultChanInit := orderData.placeOrderRespChan
+			dataHolder := placeOrderResp{clientOrderID: orderData.clientOrderID, status: "initializing order"}
+			orderResultChan = nil
+			clientOrderID := orderData.clientOrderID
+			var IsNewPartialStatusInformed bool
+			for {
+				select {
+				case <-time.After(time.Millisecond * 10000):
+					close(orderData.placeOrderRespChan)
+					return
+				case orderResultChan <- dataHolder:
+					orderResultChan = nil
+					if dataHolder.status != "doOrder" && dataHolder.status != "new" && dataHolder.status != "partiallyFilled" {
+						continue
+					}
+				case orderResultChanInit <- placeOrderResp{clientOrderID: orderData.clientOrderID, status: "initializing order"}:
+					dataHolder = placeOrderResp{status: "doOrder"}
+					orderResultChanInit = nil
+					orderResultChan = nil
+				}
+				if dataHolder.status == "doOrder" {
+					oldBaseBalance, _ = w.getBalanceFunc(startBalanceChan)
+					//Placing order now ..................
+					placedOrder, err = w.API.NewOrder(orderData.clientOrderID, orderData.sm.ID, orderData.orderType, orderAmount, BestPriceAsString)
+					if err != nil {
+						ErrorMessage = fmt.Sprintf("PlaceOrder: For %s: FATAL3: %v", w.Symbol.ID, err)
+						log.Printf("%s", ErrorMessage)
+						//log.Printf("PlaceOrder: For %s: FATAL3: Order: %s Amount: %s Price: %s", orderData.sm.ID, orderData.orderType, orderAmount, BestPriceAsString)
+						if strings.Contains(ErrorMessage, "Insufficient funds") {
+							dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, order: orderData.order, err: errors.New(ErrorMessage), status: "Insufficient funds"}
+							orderResultChan = orderData.placeOrderRespChan
+							continue
+						}
+						dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, err: errors.New(ErrorMessage), status: "doOrder"}
+						orderResultChan = orderData.placeOrderRespChan
+						continue
+					}
+				}
+				if placedOrder.Status == "filled" {
+					//log.Printf("PlaceOrder: For %s: Order %s filled sucessfully | order %s | price %s \n", orderData.sm.ID, placedOrder.ClientOrderId, placedOrder.Quantity, placedOrder.Price)
+					poPrice, _ := strconv.ParseFloat(placedOrder.Price, 64)
+					poQuantity, _ := strconv.ParseFloat(placedOrder.Quantity, 64)
+					dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, boughtPrice: poPrice, order: poQuantity, err: nil, status: placedOrder.Status}
+					orderResultChan = orderData.placeOrderRespChan
+					continue
+				} else if placedOrder.Status == "new" || placedOrder.Status == "partiallyFilled" {
+					//log.Printf("PlaceOrder: For %s: Waiting order... | order owner: \"%s\" | order status: \"%s\" | \n", orderData.sm.ID, orderOwner, placedOrder.Status)
+					if !IsNewPartialStatusInformed {
+						dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, err: nil, status: placedOrder.Status}
+						orderResultChan = orderData.placeOrderRespChan
+						IsNewPartialStatusInformed = true
+						continue
+					}
+					afterM60 := time.After(time.Minute * 60)
+				loop:
+					for {
+						select {
+						case <-afterM60:
+							canceledOrderReal, err := w.API.CancelOrder(clientOrderID)
+							if err == nil {
+								//log.Printf("PlaceOrder: For %s: Order is now \"canceled\" due to its 60Minute waiting is exhausted, so order was not successful\n", orderData.sm.ID)
+								dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, err: errors.New("Order Canceled"), status: canceledOrderReal.Status}
+								orderResultChan = orderData.placeOrderRespChan
+								break loop
+							}
+							//log.Printf("PlaceOrder: For %s: FATAL6: %v\n", orderData.sm.ID, err)
+							time.Sleep(time.Millisecond * 1000)
+							currentbalance, _ := w.getBalanceFunc(startBalanceChan)
+							var gpoQuantity float64
+							if currentbalance > oldBaseBalance || currentbalance < oldBaseBalance {
+								sub := math.Abs(currentbalance - oldBaseBalance)
+								lowOrder := orderData.order - orderData.order*0.2
+								highOrder := orderData.order + orderData.order*0.2
+								gpoQuantity, _ = strconv.ParseFloat(gottenPlacedOrder.Quantity, 64)
+								if sub == gpoQuantity {
+									//log.Printf("PlaceOrder: For %s: Currency Balance difference %.8f is equal to gotten placed order quantity %.8f transacted so Order was successful\n", orderData.sm.ID, sub, gpoQuantity)
+									gottenPlacedOrder.Status = "filled"
+								} else if sub > lowOrder && sub < highOrder {
+									//log.Printf("PlaceOrder: For %s: Currency Balance difference %.8f is within the order range of %.8f amd %.8f so Order is assumed successful\n", orderData.sm.ID, sub, lowOrder, highOrder)
+									gottenPlacedOrder.Status = "filled"
+								} else {
+									//log.Printf("PlaceOrder: For %s: Currency Balance difference %.8f is not within the order range of %.8f amd %.8f so Order was not successful\n", orderData.sm.ID, sub, lowOrder, highOrder)
+									gottenPlacedOrder.Status = "canceled"
+								}
+							} else {
+								//log.Printf("PlaceOrder: For %s: currentbalance %.8f is equal to oldBaseBalance %.8f so Order was not successful\n", orderData.sm.ID, currentbalance, oldBaseBalance)
+								gottenPlacedOrder.Status = "canceled"
+							}
+							orderData.placeOrderRespChan <- placeOrderResp{clientOrderID: gottenPlacedOrder.ClientOrderId, order: gpoQuantity, boughtPrice: orderData.bestPrice, err: nil, status: gottenPlacedOrder.Status}
+							close(orderData.placeOrderRespChan)
+							return
+						default:
+							//basecurrentbalance, quotecurrentbalance := w.getBalanceFunc(startBalanceChan)
+							//log.Printf("PlaceOrder: For %s: Still Waiting order %.8f | owner %s | price %.8f | quoteBalance %.8f | baseBalance %.8f | ID %s | ...", orderData.sm.ID, orderData.order, orderOwner, orderData.bestPrice, quotecurrentbalance, basecurrentbalance, orderData.clientOrderID)
+							//Getting Order ................
+							gottenPlacedOrder, err = w.API.GetOrder(clientOrderID, string(20000))
+							if err != nil {
+								//log.Printf("PlaceOrder: For %s: FATAL4: %v\n", orderData.sm.ID, err)
+								time.Sleep(time.Millisecond * 1000)
+								currentbalance, _ := w.getBalanceFunc(startBalanceChan)
+								var sub float64
+								var returnStatus string
+								if currentbalance > oldBaseBalance || currentbalance < oldBaseBalance { //may lead to error as it's not the only quotecurrency accessing the basebalance
+									sub = math.Abs(currentbalance - oldBaseBalance)
+									lowOrder := orderData.order - orderData.order*0.2
+									highOrder := orderData.order + orderData.order*0.2
+									if sub > lowOrder && sub < highOrder {
+										//log.Printf("PlaceOrder: For %s: The currency balance difference %.8f between the current base balance %.8f and the old base balance %.8f is within the order range of %.8f and %.8f so the Order is assumed sucessful... | Owner: %s \n", orderData.sm.ID, sub, currentbalance, oldBaseBalance, lowOrder, highOrder, orderOwner)
+										returnStatus = "filled"
+									} else {
+										//log.Printf("PlaceOrder: For %s: The currency balance difference %.8f between the currentBalance %.8f and the oldBaseBalance %.8f is not within the order range of %.8f and %.8f so the Order was not sucessful... | Owner: %s\n", orderData.sm.ID, sub, currentbalance, oldBaseBalance, lowOrder, highOrder, orderOwner)
+										returnStatus = "canceled"
+									}
+								} else {
+									//log.Printf("PlaceOrder: For %s: currentBalance %.8f is equal to oldBaseBalance %.8f so Order %.8f with ID %s was not sucessful\n", orderData.sm.ID, currentbalance, oldBaseBalance, orderData.order, orderData.clientOrderID)
+									returnStatus = "canceled"
+								}
+								dataHolder = placeOrderResp{clientOrderID: orderData.clientOrderID, order: sub, boughtPrice: orderData.bestPrice, err: nil, status: returnStatus}
+								orderResultChan = orderData.placeOrderRespChan
+								break loop
+							}
+							if gottenPlacedOrder.Status == "filled" {
+								gpoPrice, _ := strconv.ParseFloat(gottenPlacedOrder.Price, 64)
+								gpoQuantity, _ := strconv.ParseFloat(gottenPlacedOrder.Quantity, 64)
+								dataHolder = placeOrderResp{clientOrderID: gottenPlacedOrder.ClientOrderId, boughtPrice: gpoPrice, order: gpoQuantity, err: nil, status: gottenPlacedOrder.Status}
+								orderResultChan = orderData.placeOrderRespChan
+								break loop
+							}
+							continue
+						}
+					}
+					continue
+				}
+				//log.Printf("placeOrderv3: For %s: unhandled order status \"%s\" therefore will redo order\n", orderData.sm.ID, placedOrder.Status)
+				orderResultChanInit = orderData.placeOrderRespChan
+			}
+		}(myOrderData, orderOwner, startBalanceChan)
+	}
+}
+
+func hatchID() string {
+	u4, err := hatchuid.NewV4()
+	if err != nil {
+		//log.Printf("FATAL0: error: %v", err)
+	}
+	u4hatch := strings.Split(u4.String(), "-")
+	return u4hatch[0]
+}
+
+func genXid() string {
+	id := xid.New()
+	return id.String()
+}
+
+func mixWithTextUUID(text string) string {
+	uuidHatchID := hatchID()
+	return text + uuidHatchID
+}
+
+//RealtimeUUID ...
+func RealtimeUUID(DataChannel chan string) {
+	for {
+		uuidGenxID := genXid()
+		uuidHatchID := hatchID()
+		DataChannel <- uuidGenxID + uuidHatchID
+	}
+}
+
+func alphaFromN(N int) float64 {
+	n := float64(N)
+	return 2. / (n + 1.)
+}
+
+//NewDeltaV2
+func newDeltaV2(smID string, smTickSize float64, TickerChan chan chan *model.Ticker) chan float64 {
+	deltaChan := make(chan float64)
+	lPrice := getLastPrice(TickerChan)
+	go func() {
+		for {
+			de, _ := strconv.ParseFloat(fmt.Sprintf("%.0f", math.Abs(math.Log(smTickSize))), 64)
+			la, _ := strconv.ParseFloat(fmt.Sprintf("%.0f", math.Abs(math.Log(lPrice))), 64)
+			delta := de - la
+			if delta < 55.0 && delta >= 50.0 {
+				delta = 58.0
+			} else if delta < 50.0 && delta >= 45.0 {
+				delta = 54.0
+			} else if delta < 45.0 && delta >= 40.0 {
+				delta = 48.0
+			} else if delta < 40.0 && delta >= 35.0 {
+				delta = 42.0
+			} else if delta < 35.0 && delta >= 30.0 {
+				delta = 38.0
+			} else if delta < 30.0 && delta >= 25.0 {
+				delta = 32.0
+			} else if delta < 25.0 && delta >= 20.0 {
+				delta = 28.0
+			} else if delta < 20.0 && delta >= 15.0 {
+				delta = 22.0
+			} else if delta < 15.0 && delta >= 10.0 {
+				delta = 18.0
+			}
+
+			tickSizeDelta := delta * smTickSize
+			pec := tickSizeDelta / lPrice
+			if pec > 0.0015  {
+				tickSizeDelta = lPrice * 0.0015
+			}else if pec > 0.00009 {
+				tickSizeDelta = lPrice * 0.0010
+			}else{
+				tickSizeDelta = lPrice * 0.0002
+			}
+			//log.Printf("For %s | LastPrice: %.8f | TickSize: %.8f | Delta: %.8f | tickSizeDelta:  %.8f |pecentage: %.2f%%|\n", smID, lPrice, smTickSize, delta, tickSizeDelta, tickSizeDelta/lPrice*100)
+			deltaChan <- tickSizeDelta
+		}
+	}()
+	return deltaChan
+}
+func Trunc8(v float64) float64 {
+	return math.Trunc(v * 100000000)/100000000
+}
+
+
+type secureDone struct {
+	Token          string
+	Done           bool
+	CommanderToken string
+}
+
+type UUIDChan chan string

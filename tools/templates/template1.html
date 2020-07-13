@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<title>W3.CSS Template</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="assets/css/w3.css">
+<link rel="stylesheet" href="assets/fonts/font-awesome.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<link rel="stylesheet" href="assets/css/user.css">
+<style>
+	#copy{
+		cursor: pointer;
+	}
+</style>
+<body class="w3-light-grey">
+
+<!-- Top container -->
+<div class="w3-bar w3-top w3-black w3-large" style="z-index:4">
+
+  <span id="sidemenu"> <button style="width: 60px" class="w3-bar-item w3-button w3-hover-none w3-teal w3-hover-text-light-grey" onclick="w3_open();"><i class="fa fa-bars"></i></button>
+</span><span class="w3-bar-item w3-left">NGN2BITCOIN</span> <span id="sidemenu2" style="display: none;"> <button class="w3-bar-item w3-button w3-hover-none w3-hover-red" onclick="w3_close();"><i class="fa fa-bars"></i></button>
+</span><span class="w3-bar-item w3-right w3-hide-small">BTC/NGN 2,158,223</span><span class="w3-bar-item w3-right w3-hide-small">BUY/SELL</span><span class="w3-bar-item w3-right w3-hide-small">WITHDRAWAL</span><span class="w3-bar-item w3-right w3-hide-small">DEPOSIT</span>
+</div>
+
+<!-- Sidebar/menu -->
+
+
+<nav class="w3-sidebar  w3-gray w3-animate-left" style="width:220px; display:block; margin-top: -2px;" id="mySidebar"><br>
+  <div class="w3-container w3-row">
+    <div class="w3-col s4">
+      <img src="/w3images/avatar2.png" class="w3-circle w3-margin-right" style="width:46px">
+    </div>
+    <div class="w3-col s12" >
+     <div class="w3-center"><img style="border-radius:50px; " src="assets/img/avatar_2x.png" alt=""></div><br>
+      <div class="w3-center"><span>Welcome, <strong>Ikechukwu</strong></span></div><br>
+      <div class="w3-center">
+      <a href="#" class="w3-button"><i class="fa fa-envelope"></i></a>
+      <a href="#" class="w3-button"><i class="fa fa-user"></i></a>
+      <a href="#" class="w3-button"><i class="fa fa-cog"></i></a>
+      </div>
+    </div>
+  </div>
+  
+<!--
+  <div class="w3-container">
+    <h5>Dashboard</h5>
+  </div>
+-->
+  <a style="max-width: 56px; float: right;" href="#" class="w3-bar-item w3-display-container w3-button w3-padding-16 w3-red w3-center w3-hover-black" onclick="w3_close()" title="close menu"><i class="fa fa-remove fa-fw w3-center"></i></a>
+   <div class="w3-bar-block">    
+    <a href="" class="w3-bar-item w3-button w3-padding"><i class="fa fa-dashboard fa-fw"></i> DASHBOARD </a>
+    <a href="template6.html" class="w3-bar-item w3-button w3-padding"><i class="fa fa-user fa-fw"></i> ACCOUNT </a>
+    <a href="template.html" class="w3-bar-item w3-button w3-padding"><i class="fa fa-bitcoin fa-fw"></i> BUY/SELL BTC </a>
+    <a href="template1.html" class="w3-bar-item w3-button w3-padding w3-blue"><i class="fa fa-briefcase fa-fw"></i>  BTC WALLET</a>
+    <a href="template4.html" class="w3-bar-item w3-button w3-padding"><i class="fa fa-spinner fa-spin"></i>  TRANSACTIONS </a>
+    <a href="template5.html" class="w3-bar-item w3-button w3-padding"><i class="fa fa-support fa-fw"></i>  SUPPORT  </a>
+    <a href="#" class="w3-bar-item w3-button w3-padding"><i class="fa fa-bank fa-fw"></i>  General</a>
+    <a href="#" class="w3-bar-item w3-button w3-padding"><i class="fa fa-cog fa-fw"></i>  Settings</a>
+    
+  </div>
+</nav>
+
+<!-- Navbar with Only Icons -->
+
+<div class="w3-sidebar w3-bar-block w3-hide-small w3-hide-medium w3-black w3-opacity w3-xlarge w3-hover-orange" style="width:60px; z-index: auto; margin-top:-2px;"><br><br><br>
+  
+   <a href="" class="w3-bar-item w3-button"><i class="fa fa-dashboard"></i></a> <br>
+  <a href="template6.html" class="w3-bar-item w3-button"><i class="fa fa-user"></i></a> <br>
+  <a href="template.html" class="w3-bar-item w3-button"><i class="fa fa-bitcoin"></i></a> <br>
+  <a href="template1.html" class="w3-bar-item w3-button w3-blue"><i class="fa fa-briefcase"></i></a> <br>
+  <a href="template4.html" class="w3-bar-item w3-button"><i class="fa fa-spinner fa-spin"></i></a><br>
+  <a href="/exch/support" class="w3-bar-item w3-button"><i class="fa fa-support fa-fw "></i></a> <br>
+</div>
+
+
+
+
+<!-- Overlay effect when opening sidebar on small screens -->
+<!--<div class="w3-overlay w3-hide-large w3-animate-opacity" onclick="w3_close()" style="cursor:pointer" title="close side menu" id="myOverlay"></div>-->
+
+<!-- !PAGE CONTENT! -->
+<div id="pageContent" class="w3-main " style="margin-left:60px;margin-top:40px; background-color: #d5daef">
+
+ 
+  <!-- Header -->
+  <header class="w3-container" style="padding-top:22px">
+    <marquee behavior="" direction=""><h5>Current Bitcoin Price &#8358; 2,651,977.93</h5></marquee>
+  </header>
+  <!-- End of Header -->
+  
+ <!-- Sidebar/menu -->
+
+
+
+<!-- Balance -->
+
+ <section class="w3-margin w3-container">
+   
+<!--   BTC WALLET DEPOSIT-->
+    <div class="w3-half w3-row w3-padding-16 w3-container w3-margin-10">
+     <div class="w3-container w3-white w3-border w3-padding-16">
+       <h3 class="w3-center">BTC WALLET DEPOSIT</h3><hr>
+        <div class="w3-half w3-right"><img class="w3-right" src="assets/img/bitcoin-2136339_640.png" alt=""></div>
+        <div class="w3-left w3-half">
+          <h3>Network Fees</h3>
+          <h3><i class="fa fa-bitcoin">0.0004</i></h3>
+        </div><br><br>
+        <div class="w3-clear">
+        <h3>Minimum Deposit Amount</h3>
+        <h3><i class="fa fa-bitcoin">0.0009</i></h3><br></div>
+       
+       	 <button onclick="document.getElementById('id01').style.display='block'" class="w3-button w3-round-small w3-green">Deposit
+        	
+        </button>
+					<!----MODAL POP UP FOR BTC WALLET DEPOSIT ----->
+			<div id="id01" class="w3-modal w3-margin">
+				<div class="w3-modal-content w3-animate-top w3-card-4">
+					<header class="w3-container w3-teal"> 
+						<span onclick="document.getElementById('id01').style.display='none'" 
+						class="w3-button w3-display-topright">&times;</span>
+						<h3 class="w3-center">Deposit Bitcoin</h3><br><p class="w3-center">Minimum Deposit Amount&#58; <i class="fa fa-bitcoin">0.0009</i> </p>
+					</header>
+					
+
+					<div class="w3-container w3-margin">
+        <ul class="w3-ul w3-border w3-white w3-center w3-mobile">
+        
+				  <li style="width: auto" class="w3-padding-8 w3-mobile"><input style="width: 320px" type="text" value="15PiHsSMMVrV5bpe28uHrY1E25pYTWWBWu" id="myInput">
+</li> 
+			  <li><button id="copy" onclick="myFunction()">Copy Address</button></li>         
+				  <li class="w3-padding-8">
+					<img class="w3-mobile" src="assets/img/barcode.PNG" alt="">            
+				  </li>
+				  <li class="w3-light-grey">
+					<button class="w3-button w3-teal w3-padding-large w3-hover-black">Generate New Address</button>
+				  </li>
+				</ul>
+      </div>
+    
+				</div>
+			</div><!----End of Modal Pop up  ------>
+        
+      </div>
+
+    </div>
+       
+<!--   BTC WALLET WITHDRAWAL    -->
+       
+        <div class="w3-half w3-row w3-padding-16 w3-container w3-margin-10">
+     <div class="w3-container w3-white w3-border w3-padding-16">
+       <h3 class="w3-center">BTC WALLET WITHDRAW</h3><hr>
+        <div class="w3-half w3-right"><img class="w3-right" src="assets/img/bitcoin-2136339_640.png" alt=""></div>
+        <div class="w3-left w3-half">
+          <h3>Balance</h3>
+          <h3>BTC 0.0000000</h3>
+        </div><br><br>
+        <div class="w3-clear">
+        <h3>Available</h3>
+        <h3>BTC 0.0000000</h3><br></div>
+       
+       	 <button onclick="document.getElementById('id02').style.display='block'" class="w3-button w3-round-small w3-green">Withdrawal
+        	
+        </button>
+					<!----MODAL POP UP FOR BTC WALLET WITHDRAWAL ----->
+			<div id="id02" class="w3-modal w3-margin">
+				<div class="w3-modal-content w3-animate-top w3-card-4">
+					<header class="w3-container w3-teal"> 
+						<span onclick="document.getElementById('id02').style.display='none'" 
+						class="w3-button w3-display-topright">&times;</span>
+						<h3 class="w3-center">Withdraw Bitcoin</h3><br><p class="w3-center">Maximum Withdrawal Amount&#58; <i class="fa fa-bitcoin">0.0000000</i> </p>
+					</header>
+					
+
+					<div class="w3-center">Available Balance</div>
+					<h4 class="w3-center w3-panel w3-teal">BTC 0.0000000</h4>
+
+				 	<div class=" w3-center">Bitcoin Address</div>
+					<div class="w3-center">
+					  <input class="w3-input w3-border" name="last" type="text" placeholder="">
+					</div><br>
+
+					<div class=" w3-center">Bitcoin Amount</div>
+					<div class="w3-center">
+					  <input class="w3-input w3-border" name="last" type="text" placeholder="">
+					</div>
+
+						 <p class="w3-center"><button class="w3-button w3-center w3-green w3-round">Submit</button></p>
+					  <footer class="w3-container w3-teal">
+						<p class="w3-center">Network fee&#58; <i class="fa fa-bitcoin">0.0004</i></p>
+					  </footer>
+				</div>
+			</div><!----End of Modal Pop up  ------>
+        
+      </div>
+    </div>
+
+   </section>
+    
+      
+  
+  
+<!-- End of Balance -->
+    
+  <br>
+  
+<!--  Footer Arear -->
+ 
+  <footer class="w3-container w3-dark-grey w3-padding-32">
+    <div class="w3-row">
+      <div class="w3-container w3-third">
+        <h2 class=""><span class="w3-text-color-green">N</span>GN2BITCOIN</h2>
+        <p>&copy; 2016 - 2017</p>
+        <p>Resoledge Nigeria Ltd.</p>
+        <p><i class="fa fa-email">info@ngn2bitcoin.com</i></p>
+        <p><i class="fa fa-comments"> Live Chat</i></p>
+        
+      </div>
+      <div class="w3-container w3-third">
+        <h5 class="w3-bottombar w3-border-gray">Links</h5>
+                <p>Knowledgebase</p>
+
+        <p>Terms &amp; Conditions</p>
+        <p>Privacy</p>
+        <p>FAQ</p>
+        <p>About</p>
+        <p>Contact</p>
+      </div>
+      <div class="w3-container w3-third">
+        <h5 class="w3-bottombar w3-border-gray">Social</h5>
+        <p><i class="fa fa-facebook"> Facebook</i></p>
+        <p><i class="fa fa-twitter"> Twitter</i></p>
+        <p><i class="fa fa-instagram"> Instagram</i></p>
+        <p><i class="fa fa-linkedin"> LinkedIn</i></p>
+        
+      </div>
+    </div>
+  </footer>
+
+  
+  
+  <!--  End of Footer Arear -->
+  
+
+  <!-- End page content -->
+
+</div>
+<script>
+// Toggle between showing and hiding the sidebar, and add overlay effect
+	function w3_open() {
+    document.getElementById("mySidebar").style.display = "block";
+		 document.getElementById("sidemenu").style.display = "none";
+		document.getElementById("sidemenu2").style.display = "block";
+		
+		
+		document.getElementById("mySidebar").style.width = "220px";
+    document.getElementById("pageContent").style.marginLeft = "220px";
+}
+	w3_open()
+	
+function w3_close() {
+    document.getElementById("mySidebar").style.display = "none";
+	document.getElementById("sidemenu").style.display = "block";
+	document.getElementById("sidemenu2").style.display = "none";
+	document.getElementById("pageContent").style.marginLeft = "60px";
+}
+	
+	
+	
+//// Copy text with the click of the button
+function myFunction() {
+		 var copyText = document.getElementById("myInput");
+		 copyText.select();
+		document.execCommand("Copy");
+		 alert("Copied the Wallet Address: " + copyText.value);
+	}
+</script>
+</body>
+</html>

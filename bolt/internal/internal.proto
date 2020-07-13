@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package internal;
+
+message User {
+	int64 ID = 1;
+	string Token = 2;
+	string Username = 3;
+	string Role = 4;
+	string Password = 5;
+	string Email = 6;
+	int64 Expiry = 7;
+	string Amount = 8;
+	string Bank = 9;
+	string BuyStatus = 10;
+	string SellStatus = 11;
+	string WalletAddress = 12;
+	bool Authenticated = 13;
+	string ImageURL = 14;
+	int64 CreatedTime = 15;
+	string Firstname = 16;
+	string Lastname = 17;
+	string Url = 18;	
+}
+

@@ -1,0 +1,120 @@
+<div class="container-fluid">
+    <div class="navbar-header text-center"><a  style="color: white;" class="navbar-brand navbar-link" href="#"><span style="font-size: 25px; vertical-align: middle">NGN2BITCOIN</span></a>
+        <button class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navcol-1"><span class="sr-only">Toggle navigation</span><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button>
+    </div>
+    <div class="collapse navbar-collapse">
+        <ul class="nav navbar-nav navbar-right">
+            <li class="active" role="presentation"><a href="#">BUY/SELL BTC </a></li>
+            <li role="presentation"><a href="template1.html">BTC WALLET </a></li>
+            <li role="presentation"><a id="myLink1" href={{.LoginURL}}><span class="glyphicon glyphicon-log-in"></span>LOGIN </a></li>
+            <li role="presentation"><a id="myLink2" href={{.SignupURL}}><span class="glyphicon glyphicon-user"></span> SIGN UP </a></li>
+            {{end}}
+            {{end}} 
+        </ul>
+    </div>
+</div>
+
+<div class="jumbotron hero">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-4 col-md-push-7 phone-preview">
+                <div class="iphone-mockup"><img src="assets/img/iphone.svg" class="device">
+                    <div class="screen"></div>
+                </div>
+            </div>
+            <div class="col-md-6 col-md-pull-3 get-it text-center">
+                <h1>Bitcoin to Naira Exchange</h1>
+                <p>Trade your bitcoin for naira and your naira for bitcoin</p>
+            </div>
+        </div>
+    </div>          
+                    
+
+    <section class="testimonials">
+        <h2 class="text-center">People Love It!</h2>
+        <blockquote>
+            <p>B2N is Secure, fast, reliable an very easy to use.</p>
+            <footer>Resoledge Tech Website</footer>
+        </blockquote>
+    </section>
+    <section class="features">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h2>Fantastic Features</h2>
+                    <p>Instantly Convert your Bitcoin to naira and your naira to bitcoin at a Very Low and Considerate Network fees. Simple user interface and standby customer support. Daily reports on bitcoin prices and more! </p>
+                </div>
+                <div class="col-md-6">
+                    <div class="row icon-features">
+                        <div class="col-xs-4 icon-feature"><i class="glyphicon glyphicon-fire"></i>
+                            <p>Secure </p>
+                        </div>
+                        <div class="col-xs-4 icon-feature"><i class="glyphicon glyphicon-piggy-bank"></i>
+                            <p>Saves You Money</p>
+                        </div>
+                        <div class="col-xs-4 icon-feature"><i class="glyphicon glyphicon-fire"></i>
+                            <p>Fire Proof</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <div class="footer-basic">
+    <footer>
+        <div class="social"><a href="#"><i class="icon ion-social-instagram"></i></a><a href="#"><i class="icon ion-social-snapchat"></i></a><a href="#"><i class="icon ion-social-twitter"></i></a><a href="#"><i class="icon ion-social-facebook"></i></a></div>
+        <ul class="list-inline">
+            <li><a href="#">BUY/SELL BTC</a></li>
+            <li><a href="#">BTC WALLET</a></li>
+            <li><a href="#">WITHDRAWAL</a></li>
+            <li><a href="#">DEPOSIT</a></li>
+            <li><a href="#">ABOUT US</a></li>
+        </ul>
+        <p class="copyright">Company Name © 2016</p>
+    </footer>
+</div>
+
+<div class="row">
+    <div class="w3-quarter" id="headermenu"> 
+      <h1 id="headerm" style="text-transform: uppercase; font-size: 30px;"> Nanny9ja</h1>
+      <div id="headerm2">
+          <a href="/">Home</a>
+      </div>
+  </div>
+   <nav class="w3-quarter text-left" id="headermenu"> 
+       {{if .AuthEnabled}} <!-- this means if authentication is enabled for the application-->
+       {{if .User}}<!-- and the user session is profiled for the user --> 
+       {{if eq "Admin" .User.Level}} 
+           <p id="home"><a href="/users/list">Users</a></p>
+           <p id="home"><a href="/games">Games</a></p>
+       {{else}}  
+           <p id="home"><a href="/games">Games</a></p>
+       {{end}}
+       {{end}}
+       {{end}}          
+   </nav>
+
+   <div class="w3-quarter" id="headermenu">
+       <form>
+       <input type="text" id="search" name="search" placeholder="Search..">
+       </form>
+   </div>
+   <div class="w3-quarter text-right" id="headermenu">
+           <!-- [START auth] -->
+           {{if .AuthEnabled}} 
+           {{if .User}}   
+         <form method="post" action="{{.LogoutURL}}" id="log" style="padding: 0">
+         <button class="btn btn-default">Log out</button>
+         </form>
+           <div id="log">
+              
+              <span id="udp">{{.User.Username}}</span>
+           </div>
+            {{else}}
+           
+           
+    
+       <!-- [END auth] -->
+   </div>
+</div>

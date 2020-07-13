@@ -1,0 +1,147 @@
+package main
+
+import (
+	"binance/bot"
+	"flag"
+	"fmt"
+)
+
+const (
+	publicKey = "5FjdTVI5QjOJ8Da7bm4w5moBiXHajkWDdvIVEdUEsB9WLr8R3W1QAv3lLFXHompF"
+	secret    = "3SzASKek5ugOcQ9yyRGWeO9rYJrAg2h7aHKKtFeXhxw9a33d4WELo5u3ikZvZ6ic"
+)
+
+func main() {
+	var host, Trade, InformMeWhenLow string
+	flag.StringVar(&host, "host", "https://api.binance.com", "Host is the base url for HitBTC")
+	flag.StringVar(&Trade, "Trade", "", "Trade is trade currencies seperated by a comma eg. BCC,XMR")
+	flag.StringVar(&InformMeWhenLow, "InformMeWhenLow", "", "InformMeWhenLow is a string of trade currencies seperated by a comma for the bot to Inform Me When they are Low eg. BCC,XMR")
+	flag.Parse()
+
+	c := bot.NewClient(host, publicKey, secret)
+
+	serverTime, err := c.CheckServerTime()
+
+	fmt.Println()
+	fmt.Println("CheckServerTime = ", serverTime, "Error = ", err)
+	fmt.Println()
+	exchangeInfo, err := c.ExchangeInfo()
+	//fmt.Println("ExchangeInfo = ", exchangeInfo, "Error = ", err)
+
+	orderbook, err := c.OrderBook(exchangeInfo.Symbols[0].SymbolID, "5")
+	fmt.Println("For ", exchangeInfo.Symbols[0].SymbolID, "orderbook = ", orderbook, "Error = ", err)
+	fmt.Println()
+	//torder, err := c.TestNewOrder("ZECBTC", "SELL", "0.007", "3")
+	//fmt.Println("TestNewOrder = ", torder, "Error = ", err)
+	fmt.Println()
+	order, err := c.NewOrder("hjf567gfg57889h66gh7", "ZECBTC", "SELL", "0.007", "3")
+	fmt.Println("NewOrder = ", order, "Error = ", err)
+	fmt.Println()
+	// secret := []byte(secret)
+	// message := []byte("symbol=LTCBTC&side=BUY&type=LIMIT&timeInForce=GTC&quantity=1&price=0.1&recvWindow=5000&timestamp=1499827319559")
+
+	// hash := hmac.New(sha256.New, secret)
+	// hash.Write(message)
+
+	// // to lowercase hexits
+	// fmt.Println(hex.EncodeToString(hash.Sum(nil)))
+
+	// // to base64
+	// fmt.Println(base64.StdEncoding.EncodeToString(hash.Sum(nil)))
+
+}
+
+// 	tw := twilio.NewTwilioAPI("+" + "2349086790286")
+// 	Done := make(chan bool)
+// 	//get bcc trading balance
+// 	quoteCurrencyBalance := 0.0
+// 	quoteCurrency := "BTC"
+// 	var baseCurrencyBalance float64
+// 	var baseCurrencyBalanceAsString string
+// 	t := time.Now()
+// 	tw.StartTime = t
+// 	//message := fmt.Sprintf("HitBTC Bot Becomes Alive Time: %v", t.Format("2/1/2006 15:04:05"))
+// 	//tw.Inform(message)
+// 	Register := ""
+// 	Trade = Trade + "," + InformMeWhenLow
+// 	limit := "200"
+// 	period := "M15"
+// 	for {
+// 		tradeBalances, err := c.GetTradingBalances()
+// 		if err != nil {
+// 			fmt.Printf("FATAL: %v\n", err)
+// 			time.Sleep(time.Second * 30)
+// 		} else {
+// 			for _, balance := range tradeBalances {
+// 				if strings.Contains(Register, balance.Currency) {
+// 					continue
+// 				} else {
+// 					CurrencyBalance, _ := strconv.ParseFloat(balance.Available, 64)
+// 					if CurrencyBalance > 0.0 && balance.Currency != "BTC" {
+// 						fmt.Println(balance.Currency, "CurrencyBalance = ", CurrencyBalance)
+// 						baseCurrencyBalance = CurrencyBalance
+// 						symbolcode := balance.Currency + "BTC"
+// 						sm, err := c.GetSymbol(symbolcode)
+// 						if err != nil {
+// 							fmt.Printf("FATAL: %+v\n", err)
+// 							time.Sleep(time.Second * 30)
+// 						} else {
+// 							quantityIncrement, _ := strconv.ParseFloat(sm.QuantityIncrement, 64)
+// 							if quantityIncrement <= baseCurrencyBalance {
+// 								w := bot.NewWorker(Done, c, sm, limit, period, tw)
+// 								baseCurrencyBalanceAsString = balance.Available
+
+// 								message := fmt.Sprintf("Starting Trade of %s/%s with baseCurrencyBalance of %s", sm.BaseCurrency, quoteCurrency, baseCurrencyBalanceAsString)
+// 								//inform(message, tw)
+// 								fmt.Println()
+// 								fmt.Println(message)
+// 								fmt.Println()
+// 								go w.Trading(quoteCurrencyBalance, baseCurrencyBalance, InformMeWhenLow)
+// 								Register = Register + "," + balance.Currency
+// 							}
+// 						}
+// 					} else if balance.Currency == "BTC" {
+// 						quoteCurrencyBalance = CurrencyBalance
+// 					}
+// 				}
+// 			}
+// 		}
+
+// 		if Trade != "" {
+// 			Tra := strings.Split(Trade, ",")
+// 			for i := 0; i < len(Tra); i++ {
+// 				if strings.Contains(Register, Tra[i]) {
+// 					continue
+// 				}
+// 				fmt.Println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX Tra[i] = ", Tra[i], "Register = ", Register)
+// 				symbolcode := Tra[i] + "BTC"
+// 				sm, err := c.GetSymbol(symbolcode)
+// 				if err != nil {
+// 					fmt.Printf("FATAL: %+v\n", err)
+// 					time.Sleep(time.Second * 30)
+// 				} else {
+// 					w := bot.NewWorker(Done, c, sm, limit, period, tw)
+// 					message := fmt.Sprintf("Starting Trade of %s/%s with baseCurrencyBalance of %s", sm.BaseCurrency, quoteCurrency, "0.0")
+// 					//inform(message, tw)
+// 					fmt.Println()
+// 					fmt.Println(message)
+// 					fmt.Println()
+// 					quoteCurrencyBalance = w.GetTradingBalance("BTC")
+// 					go w.Trading(quoteCurrencyBalance, 0.0, InformMeWhenLow)
+// 					Register = Register + "," + Tra[i]
+// 				}
+// 			}
+// 		}
+// 		fmt.Println("Register = ", Register)
+// 		if time.Since(t) > time.Duration(time.Hour*6) {
+// 			t = time.Now()
+// 			message := fmt.Sprintf("HitBTC Bot is Still Alive")
+// 			tw.Inform(message)
+// 		}
+// 		time.Sleep(time.Minute)
+// 	}
+
+// 	_ = <-Done
+// 	_ = <-Done
+// 	_ = <-Done
+// }

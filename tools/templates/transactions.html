@@ -1,0 +1,231 @@
+<!-- !PAGE CONTENT! -->
+  <!-- Overlay effect when opening sidebar on small screens -->
+  <div class="w3-overlay w3-hide-large w3-animate-opacity" onclick="w3_close()" style="cursor:pointer" title="close side menu" id="myOverlay1"></div>
+  <div class="w3-main" style="margin-left:300px;margin-top:43px;">
+    <!-- Header -->
+    <header class="w3-container" style="padding-top:22px">
+      <h5><b><i class="fa fa-dashboard"></i> My Dashboard</b></h5>
+    </header>
+    <div class="w3-row-padding w3-margin-bottom">
+      <div class="w3-quarter">
+        <div class="w3-container w3-gray w3-padding-16">
+          <div class="w3-left"><i class="fa fa-comment w3-xxxlarge"></i></div>
+          <div class="w3-right">
+            <h3>52</h3>
+          </div>
+          <div class="w3-clear"></div>
+          <h4>Messages</h4>
+        </div>
+      </div>
+      <div class="w3-quarter">
+        <div class="w3-container w3-gray w3-padding-16">
+          <div class="w3-left"><i class="fa fa-eye w3-xxxlarge"></i></div>
+          <div class="w3-right">
+            <h3>99</h3>
+          </div>
+          <div class="w3-clear"></div>
+          <h4>Views</h4>
+        </div>
+      </div>
+      <div class="w3-quarter">
+        <div class="w3-container w3-gray w3-padding-16">
+          <div class="w3-left"><i class="fa fa-share-alt w3-xxxlarge"></i></div>
+          <div class="w3-right">
+            <h3>23</h3>
+          </div>
+          <div class="w3-clear"></div>
+          <h4>Shares</h4>
+        </div>
+      </div>
+      <div class="w3-quarter">
+        <div class="w3-container w3-gray w3-padding-16">
+          <div class="w3-left"><i class="fa fa-users w3-xxxlarge"></i></div>
+          <div class="w3-right">
+            <h3>50</h3>
+          </div>
+          <div class="w3-clear"></div>
+          <h4>Users</h4>
+        </div>
+      </div>
+    </div>
+    <hr>
+    <!--======= TRANSACTIONS SECTION ========= -->		
+      <div class="w3-row-padding w3-container ">
+        <div class="w3-half w3-content">
+          <h2>Transactions</h2>
+          <div class="w3-row">
+            <a href="javascript:void(0)" onclick="openCity(event, 'withdrawal');">
+            <div class="w3-third tablink w3-bottombar w3-hover-light-grey"><h4><i class="fa fa-upload"></i> Withdrawal</h4>
+            </div>
+            </a>
+            <a href="javascript:void(0)" onclick="openCity(event, 'Deposit');">
+            <div class="w3-third tablink w3-bottombar w3-hover-light-grey"><h4><i class="fa fa-download"></i> Deposit</h4>
+            </div>
+            </a>
+            <a href="javascript:void(0)" onclick="openCity(event, 'History');">
+            <div class="w3-third tablink w3-bottombar w3-hover-light-grey"><h4>History</h4> 
+            </div>
+            </a>
+          </div>
+          <!-- =======WITHDRAWAL ====== -->
+            <div id="withdrawal" class="w3-container city w3-margin-top" style="display:none">
+          
+              <!-- ======= form ===== -->
+                <form action="/action_page.php" class="w3-container w3-light-grey w3-text-blue ">
+                  <div class="w3-center w3-panel w3-gray"><h4>Withdraw Bitcoin</h4><br><p>Maximum Withdrawal Amount&#58; <i class="fa fa-bitcoin">0.0000000</i> </p>
+                  </div>
+                  <div class="w3-center">Available Balance</div>
+                  <h4 class="w3-center w3-panel w3-teal">BTC 0.0000000</h4>
+                  <div class=" w3-center">Bitcoin Address</div>
+                  <div class="w3-center">
+                    <input class="w3-input w3-border" name="last" type="text" placeholder="">
+                  </div><br>
+                  <div class=" w3-center">Bitcoin Amount</div>
+                  <div class="w3-center">
+                    <input class="w3-input w3-border" name="last" type="text" placeholder="">
+                  </div>
+                    <p><button class="w3-button w3-center w3-green w3-round">Submit</button></p>
+                </form>
+              <!-- ===	end of form === -->			
+            </div>
+          <!--=== End of WITHDRAWAL====-->	
+          <!--======= DEPOSIT=======-->	
+            <div id="Deposit" class="w3-container city w3-margin" style="display:none">    
+              <div class="w3-gray w3-panel w3-center"><h4>Deposit Bitcoin</h4><br><p>Network fee&#58; <i class="fa fa-bitcoin">0.0004</i></p>
+              </div>
+              <ul class="w3-ul w3-border w3-white w3-center">
+                <li class="w3-padding-8 w3-mobile">15PiHsSMMVrV5bpe28uHrY1E25pYTWWBWu</li>          
+                <li class="w3-padding-8">
+                  <img class="w3-mobile" src="tools/asset/img/barcode.PNG" alt="">            
+                </li>
+                <li class="w3-light-grey">
+                  <button class="w3-button w3-teal w3-padding-large w3-hover-black">Generate New Address</button>
+                </li>
+              </ul>
+            </div>
+          <!--====== End of DEPOSIT =====-->
+          <!--======= HISTORY ======-->
+            <div id="History" class="w3-container city w3-margin" style="display:none">
+                <h4 class="w3-panel w3-gray w3-center">Transaction History</h4>
+                <div class="w3-panel w3-card w3-center"><p>There are no transactions yet for this account.</p></div>
+            </div>
+          <!-- ======== End of History ====== -->
+        </div>
+        <!-- ====== END OF TRANSACTION SECTION ===-->
+          
+        <!-- =====  FEEDS SECTION =====  -->
+          <div class="w3-half w3-content">
+          
+            <h4><strong>Feeds</strong></h4>
+            <table class="w3-table w3-striped w3-white">
+              <tr>
+              
+              <td>Bitcoin Price.</td>
+              <td><i>NGN2,096,890.04/BTC</i></td>
+              </tr>
+              <tr>
+              
+              <td>Ethereum Price.</td>
+              <td><i>NGN108,436.13/ETH</i></td>
+              </tr>
+              <tr>
+              
+              <td>New record, over 40 users.</td>
+              <td><i>17 mins</i></td>
+              </tr>
+              <tr>
+              
+              <td>New comments.</td>
+              <td><i>25 mins</i></td>
+              </tr>
+              <tr>
+              
+              <td>Check transactions.</td>
+              <td><i>28 mins</i></td>
+              </tr>
+              <tr>
+              <td>CPU overload.</td>
+              <td><i>35 mins</i></td>
+              </tr>
+              <tr>
+              <td>New shares.</td>
+              <td><i>39 mins</i></td>
+              </tr>
+            </table>
+        
+          </div>
+        <!--===== END OF FEEDS ==== -->
+      </div>			
+    <!-- ========== END OF TRANSACTIONS  ============-->
+    <br>  
+    <!-- Footer -->
+      <footer class="w3-container w3-dark-grey w3-padding-16 w3-margin-right w3-margin-left">
+        <div class="w3-row">
+          <div class="w3-container w3-third">
+            <h2 class=""><span class="w3-text-color-green">N</span>GN2BITCOIN</h2>
+            <p>&copy; 2016 - 2017 NGN2BITCOIN</p>
+            <p>Resoledge Nigeria Ltd.</p>
+            <p><i class="fa fa-email">info@ngn2bitcoin.com</i></p>
+            <p><i class="fa fa-comments"> Live Chat</i></p>
+            
+          </div>
+          <div class="w3-container w3-third">
+            <h5 class="w3-bottombar w3-border-gray">Links</h5>
+            <p>Terms &amp; Conditions</p>
+            <p>Privacy</p>
+            <p>FAQ</p>
+            <p>About</p>
+            <p>Contact</p>
+          </div>
+          <div class="w3-container w3-third">
+            <h5 class="w3-bottombar w3-border-gray">Social</h5>
+            <p><i class="fa fa-facebook"> Facebook</i></p>
+            <p><i class="fa fa-twitter"> Twitter</i></p>
+            <p><i class="fa fa-instagram"> Instagram</i></p>
+            <p><i class="fa fa-linkedin"> LinkedIn</i></p>
+            
+          </div>
+        </div>
+      </footer>
+    <!-- End of Footer -->
+  </div>
+  <script>
+    function openCity(evt, cityName) {
+      var i, x, tablinks;
+      x = document.getElementsByClassName("city");
+      for (i = 0; i < x.length; i++) {
+        x[i].style.display = "none";
+      }
+      tablinks = document.getElementsByClassName("tablink");
+      for (i = 0; i < x.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" w3-border-red", "");
+      }
+      document.getElementById(cityName).style.display = "block";
+      evt.currentTarget.firstElementChild.className += " w3-border-red";
+    }
+  </script>
+  <script>
+    // Get the Sidebar
+    var mySidebar = document.getElementById("mySidebar");
+
+    // Get the DIV with overlay effect
+    var overlayBg = document.getElementById("myOverlay1");
+
+    // Toggle between showing and hiding the sidebar, and add overlay effect
+    function w3_open() {
+        if (mySidebar.style.display === 'block') {
+            mySidebar.style.display = 'none';
+            overlayBg.style.display = "none";
+        } else {
+            mySidebar.style.display = 'block';
+            overlayBg.style.display = "block";
+        }
+    }
+
+    // Close the sidebar with the close button
+    function w3_close() {
+        mySidebar.style.display = "none";
+        overlayBg.style.display = "none";
+    }
+  </script>
+<!-- !PAGE CONTENT! End-->
